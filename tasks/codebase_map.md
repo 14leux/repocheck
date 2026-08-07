@@ -2,45 +2,51 @@
 
 | Path | Status | Purpose |
 |------|--------|---------|
-| `README.md` | active | Project overview, origin, status of scoping decisions |
+| `README.md` | active | Project overview, install/usage, glossary — rewritten for real usage at M12 |
 | `CLAUDE.md` | active | Agent entry point, non-negotiables (4) |
+| `CONTRIBUTING.md` | active | M12 — red-flag-rule contribution process per DECISIONS.md #006 |
 | `LICENSE` | active | MIT license (DECISIONS.md #005) |
-| `.agent/instructions.md` | active | Boot/close sequence, Open Items table (OI-001–OI-015) |
-| `DECISIONS.md` | active | Decision log — 21 entries |
-| `MILESTONES.md` | active | 12 milestones, grouped V1 / Hardening / Release |
-| `KNOWLEDGE.md` | active | Confirmed learnings — session 1 validation trace findings |
+| `.gitignore` | active | Python/secrets/OS ignores |
+| `.agent/instructions.md` | active | Boot/close sequence, Open Items table (OI-001–OI-021) |
+| `DECISIONS.md` | active | Decision log — 23 entries |
+| `MILESTONES.md` | active | 12 milestones, all DONE (M9 partial — OI-020 open) |
+| `KNOWLEDGE.md` | active | Confirmed learnings — validation traces, 2 rounds of independent QA, all post-M12 open-item fixes |
 | `council-transcript-20260807T000000.md` | active | 8-advisor llm-council run on v1 scope (session 1) |
 | `tasks/context.md` | active | Live session checkpoint |
 | `tasks/wip.md` | active | Crash-recovery pad |
 | `tasks/todo.md` | active | Task board |
 | `tasks/codebase_map.md` | active | This file |
-| `.gitignore` | active | Python/secrets/OS ignores, added session 2 |
-| `skeleton.py` | active | M2 walking skeleton — hardcoded GitHub+OSV.dev CVE lookup, stdlib-only. Will be refactored behind pluggable interfaces at M7 (DECISION 021), not meant to survive unchanged. |
-| `skill_scan.py` | active | M3 skill-mode instruction scan — credential-exfil, instruction-override, shell-pipe-execute red flags, plus fetch-and-follow caveat. Imports from skeleton.py directly (pre-M7, no interface yet). |
-| `code_scan.py` | active | M4 repo-mode code red-flag scan — obfuscation, credential-harvesting, suspicious network calls, install-time scripts. Streams file-by-file for memory (not API-call-count, OI-017). |
-| `freshness_scan.py` | active | M5 dependency freshness — PyPI+npm lookup, distinguishes pinning style from real staleness. Go not yet supported (OI-018). |
-| `verdict.py` | active | M6 severity model + humanized verdict — combines all pillars into traffic-light + narrative, two modes, `--json`. |
-| `interfaces.py` | active | M7 — FileAccessProvider (extracted, proven swappable) and ModelProvider (forward-defined for M9) abstract interfaces. |
-| `github_provider.py` | active | M7 — GitHubFileAccessProvider, the only v1 file-access implementation, moved verbatim from skeleton.py. |
-| `test_provider_swap.py` | active | M7 — proves FileAccessProvider swap works with zero changes to skeleton.py/code_scan.py, using a fake in-memory provider. |
-| `repocheck.py` | active | M8 — CLI entry point, zero scan logic, auto-detects repo/skill mode. **V1 complete as of this file.** |
-| `anthropic_provider.py` | active | M9 — AnthropicModelProvider, raw HTTP (no SDK dep), specific missing-key error. |
-| `deep_scan.py` | active | M9 — opt-in deep scan, high-risk file selection, prompt-injection-safe prompt. `--confirm` required to call the API. |
-| `verify_deep_scan.py` | active | M9 — live-verification script for the 2 acceptance criteria not yet checked (OI-020). Run once ANTHROPIC_API_KEY is available. |
-| `skills/repocheck/SKILL.md` | active | M10 — RepoCheck's own Claude Code skill wrapper. Scans clean under its own instruction-scan (dogfooding). |
-| `semver_resolve.py` | active | M11 fix — npm caret/tilde range resolution against the live registry, no third-party semver lib. Found needed by round-1 independent QA. |
-| `suppression.py` | active | M11 — `.repocheck-allow.json` suppression mechanism (OI-013), category+path matching, type-validated after a crash was found and fixed. |
+| `skeleton.py` | active | Core: CVE lookup via OSV.dev, manifest parsing (PyPI/npm/Go), `parse_repo_arg` (hardened against malformed input), `resolve_package_versions` (npm caret/tilde resolution), `strip_invisible_characters` (shared Unicode-evasion fix), module-level `list_tree`/`fetch_file`/`fetch_all_files` delegating to the active `FileAccessProvider` |
+| `skill_scan.py` | active | Skill-mode instruction scan — credential-exfil (incl. env-var-shaped secrets), instruction-override (broadened guard), shell-pipe-execute (incl. xargs/download-then-execute), fetch-and-follow caveat |
+| `code_scan.py` | active | Repo-mode code red-flag scan — obfuscation (co-occurrence-gated), credential-harvesting (multi-language/library), suspicious network calls (private-IP-excluded), install-time scripts. Scans `.ps1` too |
+| `freshness_scan.py` | active | Dependency freshness — PyPI, npm, and Go (case-encoded module proxy), concurrent lookups |
+| `verdict.py` | active | Severity model + humanized verdict — both modes, `--json`, degraded-state handling, suppression, reproducibility metadata, concurrent + bulk-fetch pillars |
+| `interfaces.py` | active | `FileAccessProvider` (extracted, proven swappable, `fetch_all_files` bulk-fetch method) and `ModelProvider` (forward-defined for M9) |
+| `github_provider.py` | active | `GitHubFileAccessProvider` — per-file contents API plus `fetch_all_files` (one tarball download, graceful per-file fallback verified with a real simulated failure) |
+| `semver_resolve.py` | active | npm caret/tilde range resolution against the live registry, no third-party semver lib |
+| `suppression.py` | active | `.repocheck-allow.json` suppression mechanism, category+path matching, type-validated |
+| `concurrency.py` | active | Shared thread-pool helper (`parallel_map`), ~9x measured speedup, used by verdict.py/freshness_scan.py/skeleton.py |
+| `test_provider_swap.py` | active | Proves `FileAccessProvider` swap works with zero changes to calling code, using a fake in-memory provider |
+| `repocheck.py` | active | CLI entry point — zero scan logic, auto-detects repo/skill mode, exits non-zero on a failed/degraded scan |
+| `anthropic_provider.py` | active | `AnthropicModelProvider` — raw HTTP (no SDK dep), specific missing-key error |
+| `deep_scan.py` | active | Opt-in deep scan — high-risk file selection, prompt-injection-safe prompt, `--confirm` required. NOT yet verified against a live API call (OI-020) |
+| `verify_deep_scan.py` | active | Live-verification script for deep_scan.py's 2 unverified acceptance criteria (OI-020) — run once `ANTHROPIC_API_KEY` is available |
+| `skills/repocheck/SKILL.md` | active | RepoCheck's own Claude Code skill wrapper — scans clean under its own instruction-scan (dogfooding found and fixed a real false positive) |
 
-| `CONTRIBUTING.md` | active | M12 — red-flag-rule contribution process per DECISIONS.md #006. |
-| `concurrency.py` | active | OI-019 fix — shared thread-pool helper, ~9x measured speedup on verdict.py's full pipeline. |
-| `skeleton.strip_invisible_characters()` | active | OI-016 fix — strips Unicode format-category (Cf) characters before pattern matching, shared by skill_scan.py and code_scan.py. Closes the invisible-Unicode evasion technique. |
-| `freshness_scan.go_freshness()` | active | OI-018 — Go module proxy freshness lookup with case-encoding, verified against a real uppercase-path module. |
-| `github_provider.fetch_all_files()` | active | OI-017 — bulk tarball download replacing per-file API calls, graceful fallback verified with a real simulated failure. |
+**ALL 12 MILESTONES COMPLETE.** Repo is public at
+github.com/14leux/repocheck, default branch `main`. Only tracked open
+items remain: OI-020 (blocked on a live `ANTHROPIC_API_KEY`, not this
+session's to resolve) and OI-021 (proximity-based obfuscation matching,
+needs AST-level analysis — deferred, larger scope than a pattern fix).
 
-DECISIONS.md now has 23 entries (DECISION 023 added at M10, resolving
-OI-007). `.agent/instructions.md`'s Open Items table now runs to
-OI-021 (M11's fix cycle added 2 new items, closed 6 previously-open
-ones). `README.md` was fully rewritten at M12 for real usage (install,
-usage, glossary) — no longer the session-1 idea-capture version.
-**ALL 12 MILESTONES COMPLETE as of this file.** Repo is public at
-github.com/14leux/repocheck, default branch `main`.
+**Reconcile note (this close):** `git ls-files` compared against this
+map — all 30 tracked files accounted for, no mapped-but-deleted
+entries. Fixed two staleness issues found during reconcile: a broken
+markdown table (a stray blank line had split it into two separate
+tables) and three descriptions that still described pre-fix state
+(`code_scan.py`/`freshness_scan.py` referencing OI-017/OI-018 as open
+when both are now closed). Also consolidated three function-level rows
+that had been added ad hoc (`skeleton.strip_invisible_characters()`,
+`freshness_scan.go_freshness()`, `github_provider.fetch_all_files()`)
+back into their parent file's single row — the map's granularity is
+files, not functions within already-mapped files.

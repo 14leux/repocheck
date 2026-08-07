@@ -175,6 +175,12 @@
 - [x] M7's provider-swap demonstration (test_provider_swap.py) still passes untouched -- confirms the new interface method's default-per-file design didn't break backward compatibility
 - [x] Pre-flight time estimate recalibrated for the new architecture
 
+## Session close reconcile -- found 4 stale Open Items (done this session)
+
+- [x] OI-009, OI-010, OI-015 were genuinely resolved during M3/M4/M6 but never marked CLOSED in the table -- fixed
+- [x] OI-014 (v1 scope realistic for a solo builder?) closed with the empirical answer -- yes, all 12 milestones shipped
+- [x] tasks/codebase_map.md reconciled -- fixed a broken table (stray blank line), 3 stale descriptions, consolidated 3 function-level rows into their parent file entries
+
 ## Next up (Session 3+) -- tracked technical debt, no milestones left
 
 All 12 milestones are DONE. Remaining work is tracked open items, not

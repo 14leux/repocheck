@@ -668,6 +668,27 @@ fetch will fall back to the slower per-file path rather than failing
 outright, which is the correct degrade-gracefully behavior but worth
 knowing about if private-repo scanning becomes a real use case later.
 
+## Session 2 -- session-close reconcile caught 4 stale Open Items
+
+**OI-009, OI-010, and OI-015 had all been genuinely resolved during
+M3/M4/M6 implementation but were never marked CLOSED in the Open Items
+table** -- they were fixed as a natural side effect of building the
+feature they described, not as a deliberate "now let me close this OI"
+step, so nobody updated the table at the time. Caught only because the
+close protocol requires re-reading the whole Open Items table against
+current reality, not just the items touched this session. **OI-014**
+(whether full v1 scope was realistic for a solo builder) was also
+closeable -- not by a technical fix, but because the session itself is
+the empirical answer: all 12 milestones shipped.
+
+This is the same shape of lesson as the codebase-map reconcile
+principle (`PROJECT_DISCIPLINE.md` staleness can predate the session
+and only gets caught if every close re-verifies the *full* list, not
+just a diff) applied to the Open Items table instead of the file
+listing. Worth remembering: closing an open item is a distinct action
+from fixing the thing it describes, and needs its own deliberate step,
+not an assumption that fixing implies closing.
+
 ### Overall lesson
 
 Two consecutive rounds of independent adversarial testing each found

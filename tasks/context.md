@@ -1,110 +1,87 @@
 # tasks/context.md
 
-**Status:** IN PROGRESS
+**Status:** CLOSED
 
-## Session 2 boot summary
+## Session 2 — Build, hardening, public release, and open-item cleanup
 
-Repo synced clean (fetch/status/branches all clean, single branch,
-matches origin). Session 1 closed cleanly — M1 DONE, 22 decisions on
-record, private repo live at github.com/14leux/repocheck, nothing
-unpushed. Per the stop-scoping trigger in MILESTONES.md M1 and the
-todo.md carry-forward, session 2 opens at **M2 — walking skeleton**:
-a hardcoded Python path (repo URL → manifests → OSV.dev batch query →
-advisory list, no interfaces yet per DECISION 021), with acceptance
-being that it reproduces the M1 manual `browser-use/browser-use` trace
-in code, works against a second different-ecosystem repo unmodified,
-and correctly walks a monorepo with manifests in separate
-subdirectories.
-
----
-
-## Session 1 — Scoping and validation
-
-**Goal:** Take RepoCheck from idea-capture (a README and a todo list, no
-code, no discipline files) to a fully scoped project with a validated
-detection mechanism and a real build plan.
+**Goal:** Take RepoCheck from a validated-but-unbuilt scoping document
+(session 1's output) to a real, working, tested, publicly released tool.
 
 **What was done:**
 
-Set up the lightweight `PROJECT_DISCIPLINE.md` §10 file set — CLAUDE.md,
-`.agent/instructions.md`, DECISIONS.md, MILESTONES.md, KNOWLEDGE.md,
-codebase_map.md, context.md, wip.md — and LICENSE (MIT).
+Built all 8 V1 milestones (M2–M8): CVE lookup via OSV.dev, skill-mode
+instruction scanning, repo-mode code red-flag scanning, dependency
+freshness, a severity model + humanized traffic-light verdict, the
+pluggable file-access interface (extracted from working code and
+proven swappable with a real stub), and the CLI itself. Every pillar
+was validated against real repos, not just synthetic tests — the
+walking skeleton reproduced the session-1 manual trace exactly, then
+exceeded it by finding two more real vulnerabilities the manual sample
+missed.
 
-Resolved every scoping question the original README left open, plus a
-lot it did not anticipate, across **21 DECISIONS.md entries**: ships as
-both a Claude Code skill and a standalone CLI over one Python core
-library; live CVE lookup via OSV.dev, never a local self-mutating DB;
-red-flag ruleset improves via versioned human-reviewed releases; novel
-attack patterns caught by a free static pass plus an opt-in LLM deep
-scan; static scan always free, deep scan never automatic; traffic-light
-plus humanized narrative output with JSON via flag; GitHub-only host in
-v1 behind a pluggable interface; MIT and public from day one; primary
-purpose ranked Leverage > Learning > Revenue.
+Built Hardening (M9–M11) and Release (M12): opt-in deep scan (built and
+mostly verified — two acceptance criteria need a live API call not
+available in this environment, tracked as OI-020), the Claude Code
+skill wrapper (dogfooding immediately found and fixed a real false
+positive), degraded-state/reproducibility/suppression handling, and
+full public-release polish (README rewritten, CONTRIBUTING.md, MIT
+license, repository flipped private → public at
+github.com/14leux/repocheck with the default branch renamed
+master → main).
 
-Ran two independent councils. The 8-advisor `llm-council` found the
-architecture sound but caught a real gap: the four scan pillars were all
-designed around code-shaped threats, while 2026 research shows the
-dominant attack on Claude Code skills is instruction-shaped — malicious
-prose in `SKILL.md`. That produced DECISION 015 (distinct repo/skill
-scan modes, with skill mode getting a default free instruction-content
-pass) and DECISION 016 (deep scan must treat scanned content as
-untrusted data, never as instructions). Both were added to CLAUDE.md's
-non-negotiables. The `new-project` skill's 5-advisor council then
-independently reached the same conclusion the first one had: validate
-the mechanism before building more architecture around it.
+At Mailu's explicit request, dispatched independent adversarial QA
+subagents against the Hardening work rather than relying on
+self-testing. Two rounds found real bugs beyond what the building
+session's own tests caught — most seriously, npm caret ranges
+(`^4.1.9`) were being treated as exact pinned versions for both CVE
+lookup and freshness classification, verified wrong (and the fix
+verified *correct*, not just different) by cross-checking against
+OSV.dev directly. Also found and fixed: two crash paths with no error
+handling, an overfit false-positive guard, several detection evasions,
+an obfuscation false positive, and a suppression-mechanism crash.
 
-**So the validation trace finally ran** — by hand, against
-`github.com/browser-use/browser-use` (108k stars, real production repo
-with real shipped skills). It confirmed the OSV.dev mechanism works
-(`pillow==12.2.0` returned 26 real advisories; five other pinned
-dependencies came back genuinely clean) and the install-hook check
-produced a correct true negative. It also found two things neither
-council caught: legitimate skills routinely instruct agents to fetch and
-follow external URLs at runtime, which is structurally identical to the
-attack vector RepoCheck exists to catch and cannot be resolved by a
-one-time static scan (DECISION 020 — surfaced as an honest caveat, never
-a pass/fail claim); and a concrete false-positive case, a secure
-`printf … | auth login --api-key-stdin` pattern that a naive rule would
-misflag as credential leakage.
+After M12, continued closing the remaining tracked open items with the
+same real-verification discipline: OI-019 (concurrency, ~9x measured
+speedup), OI-016 (sourced two real examples directly from Snyk's
+ToxicSkills research rather than another synthetic test — found and
+fixed two genuinely new gaps, a credential-shaped-environment-variable
+exfiltration pattern and an invisible-Unicode-character evasion
+technique), OI-018 (Go ecosystem freshness, verified against a real
+uppercase-path module), and OI-017 (bulk tarball fetch replacing
+per-file API calls, combined with OI-019 for an ~18x total improvement
+on the same repo — 352s down to 19s).
 
-Finally, rewrote MILESTONES.md from scratch — 12 milestones grouped
-V1 / Hardening / Release, each with falsifiable acceptance criteria tied
-to the actual `browser-use` results rather than to assumptions. V1 is
-defined as M1–M8, ending at a CLI that vets a repo faster than doing it
-by hand. DECISION 021 records the resequencing the councils argued for:
-prove each mechanism against a real target first, extract the pluggable
-interfaces from working code at M7 rather than designing them up front.
+This close's own reconcile step caught a real gap: OI-009, OI-010, and
+OI-015 had all been genuinely resolved during earlier implementation
+but were never marked CLOSED in the Open Items table, because fixing
+the thing an item describes and closing the item are different actions
+that both need a deliberate step. Fixed as part of this close, not
+carried forward as more stale debt.
 
-**Next session starts with:** M2, the walking skeleton — Python,
-hardcoded to GitHub and OSV.dev, repo URL in and advisory list out, with
-acceptance being that it reproduces this session's manual trace in code.
-A stop-scoping trigger is recorded in MILESTONES.md M1: session 2 is
-build-only, and OI-007 through OI-015 get resolved by the code that
-needs them rather than in advance.
+**Next session starts with:** no milestones remain — all 12 are DONE.
+Two tracked open items remain, neither blocking: OI-020 (run
+`verify_deep_scan.py` once a real `ANTHROPIC_API_KEY` is available,
+then flip M9 fully DONE) and OI-021 (proximity-based obfuscation
+matching — needs AST-level analysis, a genuinely larger undertaking
+than a pattern tweak, deferred deliberately rather than rushed).
 
-**Blockers:** none.
+**Blockers:** none for further work; OI-020 specifically needs a live
+API key this environment doesn't have.
 
-**Milestone status:** M1 DONE. M2–M12 NOT STARTED.
+**Milestone status:** M1–M8, M10, M11, M12 DONE. M9 IN PROGRESS (built,
+3 of 5 acceptance criteria verified, 2 pending OI-020).
 
 ---
 
 ```
 Close Verification:
-- KNOWLEDGE.md updated: yes — entries: OSV.dev batch lookup validated with real data; manifest-only install-hook true negative; skills fetch-and-follow external URLs (TOCTOU gap); api-key-stdin false-positive case; GitHub hosted code-search API unreliable; gh CLI available and authenticated; session-discipline lesson that wip.md was never kept live
-- DECISIONS.md updated: yes — entries: #001–#014 (session shape, cost model, output, host/ecosystem/provider scope, language), #015 (repo/skill scan modes), #016 (deep scan treats content as untrusted data), #017 (CLI is agent-agnostic), #018 (pluggable model provider), #019 (lightweight scaffold reaffirmed; purpose ranked Leverage > Learning > Revenue), #020 (dynamic external-fetch caveat), #021 (build resequencing)
-- tasks/todo.md updated: yes — items closed: all 5 original scoping questions, 7 further scoping items, 5 technical open items, council review, new-project audit, validation trace, milestone rewrite — carried forward: M2 walking skeleton and its 3 acceptance criteria, plus .gitignore before first code commit
-- Open Items table updated: yes — OIs touched: OI-001 through OI-006 CLOSED with resolutions; OI-007, OI-008, OI-009, OI-010, OI-015 OPEN; OI-011, OI-012, OI-013, OI-014 PENDING (deferred from Socratic challenge, not blocking)
-- tasks/codebase_map.md updated: yes — entries: LICENSE and council-transcript-20260807T000000.md were missing from the map and have been added; no mapped-but-deleted entries; .gitignore noted as not yet existing
-- tasks/wip.md reset to empty template: yes — but see KNOWLEDGE.md: it was empty all session, not kept live, which is a discipline miss to correct in session 2
-- git commit created: yes — commit 3c55615, message: "Session 1 close: RepoCheck fully scoped, mechanism validated, milestones defined" (12 files changed, 1669 insertions). Second commit follows for the DECISION 022 amendment.
-- git push completed: yes — no remote existed at first attempt; created github.com/14leux/repocheck (private, per DECISION 022) and pushed with upstream set
-- git log @{u}..HEAD empty: yes — command returned no output, nothing sitting unpushed
-- branch: master, tracking origin/master — default branch. `master` → `main` rename deferred to M12 (DECISION 022)
-- git worktree audit: clean — single entry, D:/Projects/repocheck [master], no stray .claude/worktrees/* entries
+- KNOWLEDGE.md updated: yes — entries: two rounds of independent QA (7 + 6 bugs found and fixed), OI-019 concurrency (measured, not assumed), OI-016 real Snyk examples (2 new gaps found and fixed), OI-018 Go freshness (verified with a real uppercase-path module), OI-017 bulk tarball fetch (measured, fallback tested for real), and this close's own reconcile catching 4 stale Open Items
+- DECISIONS.md updated: no new entries this stretch — bug fixes and open-item closures are KNOWLEDGE.md territory, not new architectural decisions; DECISIONS.md already has 23 entries from earlier in the session (up to #023, M10's skill-wrapper decision)
+- tasks/todo.md updated: yes — items closed: OI-019/016/018/017 fix batches, session-close reconcile (4 stale OIs found and closed, codebase map fixed) — carried forward: OI-020, OI-021
+- Open Items table updated: yes — OIs touched: OI-009, OI-010, OI-014, OI-015 newly closed at this reconcile (previously stale-open despite being resolved); OI-016, OI-017, OI-018, OI-019 closed earlier this session with resolutions; OI-020, OI-021 remain OPEN with clear next steps
+- tasks/codebase_map.md updated: yes — entries: fixed a broken markdown table (stray blank line had split it in two), corrected 3 stale descriptions (code_scan.py/freshness_scan.py referencing now-closed OI-017/OI-018 as open), consolidated 3 function-level rows into their parent file's entry, verified all 30 tracked files accounted for via git ls-files, no mapped-but-deleted entries
+- tasks/wip.md reset to empty template: yes
+- git commit created: yes — see below
+- git push completed: yes — see below
+- git worktree audit: see below
 ```
-
-**Note on the close:** the push step initially failed because no git
-remote had ever been created — the whole session existed on one disk.
-Resolved during close by creating a private repository (DECISION 022,
-amending Decision 005's public-from-day-one timing; MIT licence and the
-intent to publish are unchanged, publication moves to M12).
