@@ -1,6 +1,22 @@
 # tasks/context.md
 
-**Status:** CLOSED
+**Status:** IN PROGRESS
+
+## Session 2 boot summary
+
+Repo synced clean (fetch/status/branches all clean, single branch,
+matches origin). Session 1 closed cleanly — M1 DONE, 22 decisions on
+record, private repo live at github.com/14leux/repocheck, nothing
+unpushed. Per the stop-scoping trigger in MILESTONES.md M1 and the
+todo.md carry-forward, session 2 opens at **M2 — walking skeleton**:
+a hardcoded Python path (repo URL → manifests → OSV.dev batch query →
+advisory list, no interfaces yet per DECISION 021), with acceptance
+being that it reproduces the M1 manual `browser-use/browser-use` trace
+in code, works against a second different-ecosystem repo unmodified,
+and correctly walks a monorepo with manifests in separate
+subdirectories.
+
+---
 
 ## Session 1 — Scoping and validation
 

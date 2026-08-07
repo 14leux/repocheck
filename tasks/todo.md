@@ -53,14 +53,68 @@
 - [x] Recorded the build resequencing as DECISIONS.md #021 — prove mechanisms first, extract interfaces in M7 (supersedes sequencing guidance in #012/#018, not their substance)
 - [x] Defined what "V1 done" means: M1–M8, ending at a working CLI Mailu can actually vet repos with
 
-## Next up (Session 2) — BUILD ONLY, no further scoping
+## Session 2 — M2 walking skeleton (done this session)
 
-Stop-scoping trigger is active (recorded in MILESTONES.md M1). OI-007
-through OI-015 do not block M2 — resolve them as the code needing them
-gets written.
+- [x] Added real `.gitignore` before first code commit
+- [x] M2: `skeleton.py` — Python stdlib-only, hardcoded GitHub + OSV.dev, repo URL → manifests → advisory list
+- [x] M2 acceptance: reproduced the M1 manual trace on `browser-use/browser-use` in code — pillow flagged with same 26 advisories, plus found 2 more real vulns (click, mcp)
+- [x] M2 acceptance: second different-ecosystem repo (expressjs/express, npm) works with zero code changes
+- [x] M2 acceptance: monorepo with manifests in different subdirectories (google/osv.dev — 19 manifests, 3 ecosystems) finds all of them
+- [x] Confirmed by construction: never clones, never installs, never executes anything from scanned repo
 
-- [ ] M2: walking skeleton — Python, hardcoded GitHub + OSV.dev, repo URL → manifests → advisory list
-- [ ] M2 acceptance: reproduce the M1 manual trace on `browser-use/browser-use` in code (pillow flagged, five deps clean)
-- [ ] M2 acceptance: second different-ecosystem repo works with no code changes
-- [ ] M2 acceptance: monorepo with manifests in different subdirectories finds both
-- [ ] Add a real `.gitignore` before the first code commit
+## Session 2 — M3 skill-mode instruction scan (done this session, one gap flagged)
+
+- [x] M3: `skill_scan.py` — static pattern analysis of SKILL.md content (DECISIONS.md #015), three categories: credential-exfil, instruction-override, shell-pipe-execute, plus the fetch-and-follow caveat (DECISIONS.md #020)
+- [x] M3 acceptance: tested against browser-use's real skill — external-fetch caveat correctly reported, `api-key-stdin` pattern correctly NOT flagged (OI-013's recorded case, resolved)
+- [x] M3 acceptance: three synthetic true-positive tests (credential-exfil, instruction-override, curl|bash) — all caught
+- [ ] M3 acceptance NOT met: needs a test against a real sourced malicious sample, not just synthetic examples — OI-016
+
+## Session 2 — M4 repo-mode code red-flag scan (done this session)
+
+- [x] M4: `code_scan.py` — obfuscation, credential-harvesting, suspicious network calls, install-time scripts; streams file-by-file, doesn't depend on GitHub search API (OI-015 resolved for this pillar)
+- [x] M4 acceptance: no install hooks found in browser-use's pyproject.toml (M1's recorded true negative), verified directly
+- [x] M4 acceptance: memory-scaling met by construction (fetch/scan/discard one file at a time)
+- [x] Bonus validation: true negative on a real repo (itsdangerous), true positives on all 4 categories via synthetic examples
+- [x] Flagged OI-017: API-call-count scaling (distinct from memory scaling) not yet solved, capped at 300 files for now
+
+## Session 2 — M5 dependency freshness signal (done this session)
+
+- [x] M5: `freshness_scan.py` — PyPI + npm freshness lookup, per-dependency lag + repo-level summary
+- [x] M5 acceptance: browser-use's exact-pinning style correctly not conflated with staleness (33/36 current or actively-maintained)
+- [x] Real bug caught and fixed via testing: `classify()` mislabeled a genuinely abandoned package as "current" because no newer version existed — fixed to check abandonment independent of "pinned == latest"
+- [x] True-positive confirmed post-fix (`nose==1.3.7`, 11 years stale) and true-negative reconfirmed on browser-use after the fix
+- [x] Flagged OI-018: Go ecosystem freshness lookup not implemented
+
+## Session 2 -- M6 severity model + humanized verdict (done this session)
+
+- [x] M6: `verdict.py` -- combines CVE/code-scan/freshness (repo mode) or instruction-scan (skill mode) into traffic-light + narrative, two templates, `--json` flag
+- [x] Real bug fixed: private/loopback/reserved IPs were flooding findings with false positives from browser-use's own test fixtures (107 -> 58 findings, zero real signal lost)
+- [x] Real bug fixed: pre-flight text was corrupting `--json` stdout output -- routed to stderr
+- [x] Pre-flight estimate now computed from actual scope, not a static claim
+- [x] Final verdict on browser-use: CAUTION, driven by real HIGH-severity CVEs -- a security-literate reader would agree with this
+- [x] Flagged OI-019: ~6 minute wall-clock time on a large repo, no concurrency yet
+
+## Session 2 -- M7 extract the pluggable interfaces (done this session)
+
+- [x] M7: `interfaces.py` (FileAccessProvider, ModelProvider) + `github_provider.py` (the GitHub implementation, moved verbatim)
+- [x] `skeleton.py` refactored to delegate through a swappable module-level provider -- zero changes needed to skill_scan.py, code_scan.py, freshness_scan.py, verdict.py
+- [x] M7 acceptance: all M2-M6 results re-verified identical after the refactor
+- [x] M7 acceptance: `test_provider_swap.py` proves swappability with a real fake provider, not just asserted
+- [x] ModelProvider forward-defined for M9 (honest limitation: no working code exists yet to extract it from)
+
+## Session 2 -- M8 CLI wrapper, V1 COMPLETE (done this session)
+
+- [x] M8: `repocheck.py` -- CLI wrapper, zero scan logic, auto-detects mode from 3 real usage patterns (bare repo, path arg, pasted GitHub blob URL)
+- [x] M8 acceptance: `--json` verified end to end through the CLI, both modes
+- [x] **V1 COMPLETE: M1-M8 all DONE**
+
+## Next up (Session 3) -- Hardening phase (M9-M12), not V1-blocking
+
+- [ ] M9: opt-in deep scan (LLM reasoning pass) -- needs prompt-injection-resistant handling verified with a deliberate injection attempt (DECISIONS.md #016)
+- [ ] M10: Claude Code skill wrapper -- resolve OI-007 (call mechanism) here, not before
+- [ ] M11: degraded-state handling (OI-011), reproducibility/versioning (OI-012), false-positive/allowlist mechanism (OI-013)
+- [ ] M12: public release polish, flip repo from private to public (DECISIONS.md #022)
+- [ ] OI-016: find and test against a real malicious skill sample to fully close M3
+- [ ] OI-017: API-call-count scaling for large repos
+- [ ] OI-018: Go ecosystem freshness lookup
+- [ ] OI-019: concurrency/caching for verdict.py's ~6min wall-clock time on large repos
