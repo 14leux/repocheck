@@ -46,19 +46,21 @@ not repos) and a few generalized alternatives (SourceCheck, Vetly, Auditly,
 Clearance) considered along the way. Open to revisiting once the product
 shape is clearer.
 
-## Scope for the first real session
+## Status
 
-Not built yet — this folder exists only to hold the idea so it isn't lost.
-First session should decide, in order:
-1. Skill-only (runs inside Claude Code, no standalone infra) vs. a real
-   standalone repo/CLI/service — this changes almost everything downstream.
-2. What "safe" actually checks for, concretely — start narrow (known CVEs
-   in declared dependencies + a short list of code red flags) rather than
-   trying to cover everything on day one.
-3. Whether this project needs the full `PROJECT_DISCIPLINE.md` apparatus
-   (see `D:\Projects\PROJECT_DISCIPLINE.md`) or the lightweight subset —
-   given it's day one with nothing built, lightweight is right for now;
-   revisit once there's live infra or external users (the stated trigger
-   in that doc's §10).
-4. Public-repo plan: license, contribution model, and whether it ships as
-   a Claude Code plugin/marketplace skill, a standalone CLI, or both.
+Scoping is done (session 1, 2026-08-07) — see `DECISIONS.md` for full
+rationale on each call:
+
+1. **Shape:** both a Claude Code skill and a standalone CLI, sharing one
+   core scan library (neither wrapper contains scan logic itself).
+2. **v1 scope:** the full feature set below — known CVEs in declared
+   dependencies, code-level red flags, a dependency-freshness signal,
+   and a plain-language verdict.
+3. **Discipline apparatus:** lightweight `PROJECT_DISCIPLINE.md` subset
+   (see `CLAUDE.md` and `.agent/instructions.md`) — no live infra or
+   external users yet, so no heavier apparatus.
+4. **Public-repo plan:** MIT license, public from day one.
+
+No code exists yet. Next up is Milestone #2 in `MILESTONES.md`: core
+library skeleton, starting with a language/runtime choice that works
+cleanly for both the skill and the CLI wrapper.
