@@ -145,14 +145,40 @@
 - [x] M12: default branch renamed master -> main, old branch deleted from remote
 - [x] Final safety scan for accidentally committed secrets before/after going public -- clean
 
+## Session 2 continued -- OI-019 concurrency fix (done this session)
+
+- [x] `concurrency.py` -- 10-worker thread pool, applied to code-scan file fetches, CVE severity lookups, freshness lookups, npm registry lookups
+- [x] Measured real improvement on browser-use/browser-use: ~352s -> ~38s (~9x)
+- [x] Verified correctness unchanged (same finding shape) and full regression suite still passes
+- [x] Pre-flight time estimate recalibrated against the real measurement, not re-guessed
+
+## Session 2 continued -- OI-016 closed with real research (done this session)
+
+- [x] Sourced 2 real examples from Snyk's actual ToxicSkills research (not another synthetic test)
+- [x] Real example 1 (credential-shaped env var exfil via URL params) confirmed MISSED, fixed by extending SENSITIVE_PATH_PATTERNS + EXFIL_VERB_PATTERNS
+- [x] Real example 2 (invisible Unicode character concealment) confirmed a genuine evasion, fixed with strip_invisible_characters() at the normalization layer (skeleton.py, shared by both scanners)
+- [x] Both fixes verified with zero regressions (browser-use, dogfooding, itsdangerous all identical)
+- [x] M3 now fully DONE, all 4 acceptance criteria met
+
+## Session 2 continued -- OI-018 Go freshness lookup (done this session)
+
+- [x] go_freshness() implemented with Go module proxy case encoding
+- [x] Verified against a real uppercase-path module (github.com/PuerkitoBio/goquery) -- confirms the encoding actually works, not just passes on already-lowercase paths
+- [x] Ran end-to-end against google/osv.dev (632 deps, 3 ecosystems) -- Go now reports real freshness data
+- [x] Found and fixed a gap: freshness_scan.py's own standalone scan() had never gotten the OI-019 concurrency fix (only verdict.py's inline pillar had it)
+
+## Session 2 continued -- OI-017 API-call-count fix (done this session)
+
+- [x] FileAccessProvider.fetch_all_files() added -- default per-file fallback, GitHub override uses one tarball download
+- [x] Verified correctness (identical 60 findings) and speed (~38s -> ~19s) against browser-use/browser-use
+- [x] Verified the fallback path for real -- monkeypatched a tarball failure, confirmed graceful degradation to per-file fetch, not a crash
+- [x] M7's provider-swap demonstration (test_provider_swap.py) still passes untouched -- confirms the new interface method's default-per-file design didn't break backward compatibility
+- [x] Pre-flight time estimate recalibrated for the new architecture
+
 ## Next up (Session 3+) -- tracked technical debt, no milestones left
 
 All 12 milestones are DONE. Remaining work is tracked open items, not
 blocking anything:
 
 - [ ] OI-020: run `verify_deep_scan.py` once ANTHROPIC_API_KEY is available, flip M9 fully DONE
-- [ ] OI-016: find and test against a real malicious skill sample to fully close M3
-- [ ] OI-017: API-call-count scaling for large repos
-- [ ] OI-018: Go ecosystem freshness lookup
-- [ ] OI-019: concurrency/caching for verdict.py's ~6min wall-clock time on large repos
 - [ ] OI-021: proximity-based obfuscation co-occurrence (needs AST analysis)

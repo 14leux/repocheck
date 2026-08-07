@@ -18,7 +18,7 @@ up front — see DECISION 021.
 |---|-----------|-------|--------|
 | 1 | Scoping and validation | Scope | DONE |
 | 2 | Walking skeleton — repo → manifest → OSV.dev → CVE list, hardcoded | V1 | DONE |
-| 3 | Skill-mode instruction scan | V1 | IN PROGRESS — 3 of 4 acceptance criteria met, real-malicious-sample test outstanding (OI-016) |
+| 3 | Skill-mode instruction scan | V1 | DONE |
 | 4 | Repo-mode code red-flag scan | V1 | DONE |
 | 5 | Dependency freshness signal | V1 | DONE |
 | 6 | Severity model + humanized verdict (both modes) | V1 | DONE |
@@ -106,12 +106,11 @@ untested against a repo large enough to trigger it.
 content — the differentiated pillar (DECISION 015). Free, default, no
 LLM call.
 
-**Acceptance criteria — mostly met (session 2), one gap flagged honestly:**
+**Acceptance criteria — all met:**
 - Detects credential-access-plus-exfiltration phrasings, instruction-
   override phrasings, and shell-pipe-execute patterns in prose. **Met** —
-  verified against three synthetic examples built directly from the
-  patterns named in the 2026 research and DECISIONS.md #015/#020: all
-  three caught.
+  verified against synthetic examples initially, then against real
+  sourced examples later in session 2 (below).
 - Reports "fetches and follows external content at runtime" as its own
   caveat category, not a red flag (DECISION 020). **Met** — fired
   correctly against browser-use's real skill, named `github.com`.
@@ -121,20 +120,25 @@ LLM call.
   (OI-013's recorded false-positive case). **Met** — zero false
   positives.
 - Written against at least one real known-malicious example, not only
-  synthetic test strings. **NOT met.** The three test cases are
-  synthetic — built from the research's *description* of attack
-  patterns, not an actual sourced malicious sample (e.g. from Snyk's
-  ToxicSkills dataset or the Datadog Security Labs writeup cited in
-  session 1). Recorded honestly rather than claimed done. Follow-up:
-  OI-016.
+  synthetic test strings. **Met, closing OI-016** — sourced two real
+  examples directly from Snyk's ToxicSkills research (Feb 2026 audit,
+  3,984 skills scanned): a credential-shaped-environment-variable
+  exfiltration payload, and the invisible-Unicode-character concealment
+  technique. Both initially evaded detection (real, reproduced gaps,
+  not hypothetical) and both are now fixed — see KNOWLEDGE.md "OI-016
+  closed with real research."
 
 **Lessons learned:** see KNOWLEDGE.md "Session 2 — M3 skill-mode
-instruction scan." Notably: this is the first detection category proven
-against both true positives and true negatives, not just "stays quiet on
-safe content" — closes the Contrarian's session-1 concern. The
-allowlist-vs-red-flag distinction needed a full-line check around each
-match, not a bare pattern match, designed that way from the OI-013
-example rather than discovered as a bug.
+instruction scan" and "OI-016 closed with real research." Notably: this
+is the first detection category proven against both true positives and
+true negatives, not just "stays quiet on safe content" — closes the
+Contrarian's session-1 concern. Going to the actual source material
+(Snyk's real quoted payload) surfaced two genuinely new gaps that
+inventing "representative" synthetic examples from memory had missed —
+a credential-shaped env-var reference (structurally different from a
+file path) and an invisible-Unicode evasion technique, fixed at the
+normalization layer so it closes for every pattern at once rather than
+per-regex.
 
 ---
 

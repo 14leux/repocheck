@@ -25,7 +25,7 @@ import ipaddress
 import re
 import sys
 
-from skeleton import fetch_file, list_tree, parse_repo_arg
+from skeleton import fetch_file, list_tree, parse_repo_arg, strip_invisible_characters
 
 # bumped whenever a pattern list changes (DECISIONS.md #012)
 RULESET_VERSION = "code_scan-2026-08-07"
@@ -130,6 +130,7 @@ def find_matches(content, patterns):
 
 
 def scan_file_content(path, content):
+    content = strip_invisible_characters(content)
     findings = []
     filename = path.rsplit("/", 1)[-1]
 

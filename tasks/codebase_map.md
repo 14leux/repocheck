@@ -32,6 +32,10 @@
 | `suppression.py` | active | M11 — `.repocheck-allow.json` suppression mechanism (OI-013), category+path matching, type-validated after a crash was found and fixed. |
 
 | `CONTRIBUTING.md` | active | M12 — red-flag-rule contribution process per DECISIONS.md #006. |
+| `concurrency.py` | active | OI-019 fix — shared thread-pool helper, ~9x measured speedup on verdict.py's full pipeline. |
+| `skeleton.strip_invisible_characters()` | active | OI-016 fix — strips Unicode format-category (Cf) characters before pattern matching, shared by skill_scan.py and code_scan.py. Closes the invisible-Unicode evasion technique. |
+| `freshness_scan.go_freshness()` | active | OI-018 — Go module proxy freshness lookup with case-encoding, verified against a real uppercase-path module. |
+| `github_provider.fetch_all_files()` | active | OI-017 — bulk tarball download replacing per-file API calls, graceful fallback verified with a real simulated failure. |
 
 DECISIONS.md now has 23 entries (DECISION 023 added at M10, resolving
 OI-007). `.agent/instructions.md`'s Open Items table now runs to

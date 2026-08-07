@@ -35,6 +35,30 @@ class FileAccessProvider(ABC):
         """Return the raw text content of one file."""
         raise NotImplementedError
 
+    def fetch_all_files(self, owner, repo, paths):
+        """
+        Fetch many files at once. Default implementation is one
+        fetch_file() call per path -- correct for any provider, but not
+        the point of this method. A provider that can fetch a whole
+        repo in one call (e.g. GitHub's tarball endpoint, see
+        GithubFileAccessProvider -- OI-017's fix) should override this:
+        the code red-flag pillar was costing up to 300 separate GitHub
+        contents-API calls per scan, one per candidate file, which is a
+        real scaling problem for very large repos independent of
+        OI-019's wall-clock concurrency fix.
+
+        Returns {path: content_or_Exception} -- a single path's failure
+        must not raise and abort the whole batch, matching what callers
+        already expect from a per-file fetch_file() try/except loop.
+        """
+        result = {}
+        for path in paths:
+            try:
+                result[path] = self.fetch_file(owner, repo, path)
+            except Exception as e:
+                result[path] = e
+        return result
+
 
 class ModelProvider(ABC):
     @abstractmethod

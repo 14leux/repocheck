@@ -37,7 +37,7 @@ Usage:
 import re
 import sys
 
-from skeleton import fetch_file, parse_repo_arg
+from skeleton import fetch_file, parse_repo_arg, strip_invisible_characters
 
 # bumped whenever a pattern list changes (DECISIONS.md #012 -- every
 # result should record which ruleset version produced it, since a scan
@@ -51,6 +51,12 @@ SENSITIVE_PATH_PATTERNS = [
     r"\.aws/config", r"\.npmrc", r"\.pypirc", r"\.netrc",
     r"/etc/passwd", r"\.env\b", r"\.git-credentials",
     r"authorized_keys", r"\.docker/config\.json",
+    # found via OI-016: a real example sourced from Snyk's ToxicSkills
+    # research (Feb 2026 audit) references a credential-shaped
+    # environment variable directly ($ANTHROPIC_API_KEY) rather than a
+    # file path -- the original pattern list only looked for files,
+    # missing this entire class of ambient-secret-leak instruction.
+    r"\$\{?[A-Z_]*(API[_-]?KEY|ACCESS[_-]?KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)[A-Z_]*\}?",
 ]
 
 EXFIL_VERB_PATTERNS = [
@@ -61,6 +67,11 @@ EXFIL_VERB_PATTERNS = [
     r"\bfetch\([^)]*\)\s*\.then", r"\bPOST\s+(it|this|them)\s+to\b",
     r"\bupload\s+(it|this|them)\s+to\b", r"\bsend\s+(it|this|them)\s+to\b",
     r"\bexfiltrat",
+    # the Snyk-sourced example's exfiltration shape: append a secret to
+    # every outgoing request's URL/query/header, an ongoing ambient leak
+    # rather than a one-time file-read-then-POST
+    r"\b(append|add|include|attach)\b[^\n.]{0,60}\b(as|to)\b[^\n.]{0,40}"
+    r"\b(query\s+parameter|url|header|request)\b",
 ]
 
 INSTRUCTION_OVERRIDE_PATTERNS = [
@@ -119,6 +130,7 @@ def find_matches(content, patterns):
 
 
 def scan_skill_content(content):
+    content = strip_invisible_characters(content)
     findings = []
     caveats = []
 

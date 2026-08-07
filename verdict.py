@@ -30,12 +30,14 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+from concurrency import parallel_map
 from code_scan import RULESET_VERSION as CODE_SCAN_VERSION
 from code_scan import iter_scan_targets, scan_file_content
 from freshness_scan import RULESET_VERSION as FRESHNESS_SCAN_VERSION
 from freshness_scan import FRESHNESS_LOOKUPS, classify
 from skeleton import (
     InvalidRepoArgError,
+    fetch_all_files,
     fetch_file,
     find_manifests,
     list_tree,
@@ -242,16 +244,27 @@ def repo_verdict(owner, repo, as_json):
     candidate_files = list(iter_scan_targets(tree))
     scan_count = min(len(candidate_files), 300)  # code_scan.py's MAX_FILES_TO_SCAN
 
-    # rough estimate from actual scope, not a static claim -- each of
-    # these is roughly one sequential network call under current
-    # implementation (no concurrency yet, KNOWLEDGE.md M6 finding)
-    estimated_calls = len(manifests) + scan_count + len(manifests) * 2  # CVE+freshness proxy
-    estimated_seconds = round(estimated_calls * 0.9)
+    # rough estimate from actual scope, not a static claim -- calls run
+    # concurrently in batches of DEFAULT_MAX_WORKERS (concurrency.py,
+    # OI-019 fix), so wall-clock scales with call-count/workers, not
+    # call-count directly. Calibrated against a real measurement: ~350s
+    # sequential on a 390-file repo became ~38s concurrent (~9x, close
+    # to the 10-worker pool size) -- see KNOWLEDGE.md.
+    # recalibrated after OI-017: code-scan file content now comes from
+    # one tarball download (roughly constant cost regardless of file
+    # count) instead of one API call per candidate file, so scan_count
+    # no longer dominates the estimate -- CVE severity + freshness
+    # lookups (still per-dependency, concurrent) do. Calibrated against
+    # real measurements: ~19s on a 390-file/36-dependency repo, ~5s on
+    # a small one.
+    from concurrency import DEFAULT_MAX_WORKERS
+    estimated_calls = len(manifests) * 2  # CVE severity + freshness proxy
+    estimated_seconds = 8 + round((estimated_calls / DEFAULT_MAX_WORKERS) * 0.9)
     print(
         f"  Found {len(manifests)} manifest file(s), {len(candidate_files)} "
         f"candidate source file(s) ({scan_count} will be scanned). "
-        f"Rough estimate: ~{estimated_seconds}s (sequential network calls, "
-        f"no concurrency yet -- see OI-017/OI-019).\n",
+        f"Rough estimate: ~{estimated_seconds}s (bulk file download + "
+        f"{DEFAULT_MAX_WORKERS}-way concurrent dependency lookups).\n",
         file=sys.stderr,
     )
 
@@ -299,12 +312,24 @@ def repo_verdict(owner, repo, as_json):
         ]
         if checkable:
             results = osv_batch_query([(n, v, e) for n, v, e, _, _ in checkable])
-            seen_severity = {}
+
+            # one HTTP call per unique advisory ID to fetch its severity --
+            # deduplicated first, then all fetched concurrently rather than
+            # one at a time (OI-019)
+            unique_ids = sorted({
+                v["id"]
+                for (_, _, _, _, _), result in zip(checkable, results)
+                for v in result.get("vulns", [])
+            })
+            severities = parallel_map(osv_vuln_severity, unique_ids)
+            seen_severity = {
+                vid: (sev if not isinstance(sev, Exception) else "low")
+                for vid, sev in zip(unique_ids, severities)
+            }
+
             for (name, version, eco, source, note), result in zip(checkable, results):
                 vulns = result.get("vulns", [])
                 for v in vulns:
-                    if v["id"] not in seen_severity:
-                        seen_severity[v["id"]] = osv_vuln_severity(v["id"])
                     sev = seen_severity[v["id"]]
                     label = f"{name}=={version}" if note == "exact pin" else f"{name}=={version} ({note})"
                     findings.append(make_finding(
@@ -321,13 +346,29 @@ def repo_verdict(owner, repo, as_json):
         degraded.append({"pillar": "cve", "reason": str(e)})
 
     # --- code red-flag pillar ---
+    # OI-017 + OI-019: was up to 300 sequential GitHub contents-API
+    # calls (the dominant cost of the original ~6min measurement), then
+    # parallelized to 300 concurrent calls (OI-019, ~9x faster but still
+    # 300 API calls -- a real scaling problem on its own for very large
+    # repos). Now one bulk tarball download (fetch_all_files) replaces
+    # per-file API calls entirely where the provider supports it
+    # (GitHub does); falls back to the still-concurrent per-file path
+    # automatically if the bulk fetch fails for any reason.
     try:
-        for path in iter_scan_targets(tree):
-            try:
-                content = fetch_file(owner, repo, path)
-            except Exception:
-                continue
-            for category, fpath, line_no, detail in scan_file_content(path, content):
+        target_paths = list(iter_scan_targets(tree))
+        contents = fetch_all_files(owner, repo, target_paths)
+
+        def scan_one(path):
+            content = contents[path]
+            if isinstance(content, Exception):
+                raise content
+            return scan_file_content(path, content)
+
+        results = parallel_map(scan_one, target_paths)
+        for path, result in zip(target_paths, results):
+            if isinstance(result, Exception):
+                continue  # a single file's fetch failing doesn't degrade the whole pillar
+            for category, fpath, line_no, detail in result:
                 sev = {
                     "obfuscation": "high",
                     "credential-harvesting": "critical",
@@ -346,14 +387,19 @@ def repo_verdict(owner, repo, as_json):
     abandoned_count = 0
     try:
         now = datetime.now(timezone.utc)
-        for name, version, eco, source, is_exact, note in resolved_packages:
-            if version is None:
-                continue
-            lookup = FRESHNESS_LOOKUPS.get(eco)
-            if lookup is None:
-                continue
-            result = lookup(name, version)
-            if result is None:
+        checkable_pkgs = [
+            (name, version, eco, source, is_exact, note)
+            for name, version, eco, source, is_exact, note in resolved_packages
+            if version is not None and eco in FRESHNESS_LOOKUPS
+        ]
+
+        def freshness_lookup_one(pkg):
+            name, version, eco, source, is_exact, note = pkg
+            return FRESHNESS_LOOKUPS[eco](name, version)
+
+        lookup_results = parallel_map(freshness_lookup_one, checkable_pkgs)
+        for (name, version, eco, source, is_exact, note), result in zip(checkable_pkgs, lookup_results):
+            if result is None or isinstance(result, Exception):
                 continue
             latest, pinned_date, latest_date, _ = result
             status, days = classify(version, latest, pinned_date, latest_date, now)

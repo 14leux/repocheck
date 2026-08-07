@@ -22,6 +22,7 @@ Usage:
 """
 
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -47,6 +48,22 @@ def http_get_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "repocheck-skeleton"})
     with urllib.request.urlopen(req) as resp:
         return json.load(resp)
+
+
+def http_get_text(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "repocheck-skeleton"})
+    with urllib.request.urlopen(req) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def encode_go_module_path(path):
+    """Go module proxy 'case encoding': every uppercase letter becomes
+    '!' + its lowercase form (e.g. github.com/Owner/Repo ->
+    github.com/!owner/!repo), documented at
+    https://go.dev/ref/mod#module-proxy -- this was the specific gap
+    OI-018 named (Go freshness lookup not implemented because of this
+    encoding requirement)."""
+    return re.sub(r"[A-Z]", lambda m: "!" + m.group(0).lower(), path)
 
 
 def parse_date(s):
@@ -99,9 +116,44 @@ def npm_freshness(name, pinned_version):
     return latest, pinned_date, latest_date, versions_behind
 
 
+def go_freshness(name, pinned_version):
+    encoded = encode_go_module_path(name)
+    pinned_version_str = pinned_version if pinned_version.startswith("v") else f"v{pinned_version}"
+
+    try:
+        latest_data = http_get_json(f"https://proxy.golang.org/{encoded}/@latest")
+        pinned_data = http_get_json(f"https://proxy.golang.org/{encoded}/@v/{pinned_version_str}.info")
+    except urllib.error.HTTPError:
+        return None
+
+    latest = latest_data.get("Version")
+    latest_time_s = latest_data.get("Time")
+    pinned_time_s = pinned_data.get("Time")
+    if not latest or not latest_time_s or not pinned_time_s:
+        return None
+
+    latest_date = parse_date(latest_time_s)
+    pinned_date = parse_date(pinned_time_s)
+
+    # versions_behind is a courtesy count, not load-bearing for
+    # classify() (which only needs the two dates + version strings) --
+    # approximated via string sort of @v/list rather than fetching every
+    # version's own .info (would be one more HTTP call per version).
+    # Documented as an approximation, not exact chronological ordering.
+    try:
+        listing = http_get_text(f"https://proxy.golang.org/{encoded}/@v/list")
+        all_versions = sorted(v.strip() for v in listing.splitlines() if v.strip())
+        versions_behind = sum(1 for v in all_versions if v > pinned_version_str)
+    except urllib.error.HTTPError:
+        versions_behind = 0
+
+    return latest, pinned_date, latest_date, versions_behind
+
+
 FRESHNESS_LOOKUPS = {
     "PyPI": pypi_freshness,
     "npm": npm_freshness,
+    "Go": go_freshness,
 }
 
 
@@ -155,15 +207,27 @@ def scan(owner, repo):
     print(f"Checking freshness for {len(resolved) - unresolved} resolvable of "
           f"{len(resolved)} dependencies "
           f"({unresolved} use an unresolvable version range)...\n")
+
+    # OI-019: was fully sequential here too (only verdict.py's inline
+    # pillar had been parallelized) -- one HTTP call per dependency,
+    # concurrent rather than one at a time.
+    from concurrency import parallel_map
+    checkable = [
+        (name, version, eco, source, is_exact, note)
+        for name, version, eco, source, is_exact, note in resolved
+        if version is not None and eco in FRESHNESS_LOOKUPS
+    ]
     for name, version, eco, source, is_exact, note in resolved:
-        if version is None:
-            continue
-        lookup = FRESHNESS_LOOKUPS.get(eco)
-        if lookup is None:
+        if version is not None and eco not in FRESHNESS_LOOKUPS:
             summary["unknown"] += 1
-            continue
-        result = lookup(name, version)
-        if result is None:
+
+    def lookup_one(pkg):
+        name, version, eco, source, is_exact, note = pkg
+        return FRESHNESS_LOOKUPS[eco](name, version)
+
+    lookup_results = parallel_map(lookup_one, checkable)
+    for (name, version, eco, source, is_exact, note), result in zip(checkable, lookup_results):
+        if result is None or isinstance(result, Exception):
             summary["unknown"] += 1
             continue
         latest, pinned_date, latest_date, versions_behind = result

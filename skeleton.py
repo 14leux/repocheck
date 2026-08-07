@@ -62,6 +62,26 @@ class InvalidRepoArgError(ValueError):
     pass
 
 
+def strip_invisible_characters(content):
+    """
+    Removes Unicode "format" category characters (zero-width space,
+    zero-width joiner/non-joiner, word joiner, BOM, etc.) before any
+    pattern matching runs. Shared by skill_scan.py and code_scan.py --
+    a general normalization step, not specific to either.
+
+    Found via OI-016 research (Snyk's ToxicSkills audit, Feb 2026):
+    SKILL.md files can conceal adversarial instructions by inserting
+    invisible Unicode characters mid-word (e.g. "i<ZWSP>g<ZWSP>n<ZWSP>ore"),
+    which breaks every `\\b...\\b`-anchored regex while a human or an
+    LLM reading the rendered text sees ordinary words with nothing
+    visibly wrong. A fix at the normalization layer closes this for
+    every pattern at once, rather than teaching each individual regex
+    to tolerate invisible characters.
+    """
+    import unicodedata
+    return "".join(c for c in content if unicodedata.category(c) != "Cf")
+
+
 def parse_repo_arg(arg):
     """
     Raises InvalidRepoArgError with a clear, actionable message on bad
@@ -108,6 +128,13 @@ def list_tree(owner, repo):
 
 def fetch_file(owner, repo, path):
     return _provider.fetch_file(owner, repo, path)
+
+
+def fetch_all_files(owner, repo, paths):
+    """OI-017: bulk fetch, one call instead of one-per-file where the
+    active provider supports it (GitHubFileAccessProvider uses a
+    tarball download). Returns {path: content_or_Exception}."""
+    return _provider.fetch_all_files(owner, repo, paths)
 
 
 def find_manifests(tree):
@@ -223,14 +250,22 @@ def resolve_package_versions(packages):
     result carries is_exact/note so callers can represent that honestly
     rather than with false confidence.
     """
+    from concurrency import parallel_map
+
     resolved = []
-    npm_version_cache = {}
+    npm_names = sorted({name for name, _, eco, _ in packages if eco == "npm"})
+    # one registry fetch per unique npm package name, all concurrent
+    # rather than one at a time (OI-019)
+    version_lists = parallel_map(fetch_npm_versions, npm_names)
+    npm_version_cache = {
+        name: (versions if not isinstance(versions, Exception) else [])
+        for name, versions in zip(npm_names, version_lists)
+    }
+
     for name, raw_version, ecosystem, source in packages:
         if ecosystem != "npm":
             resolved.append((name, raw_version, ecosystem, source, True, "exact pin"))
             continue
-        if name not in npm_version_cache:
-            npm_version_cache[name] = fetch_npm_versions(name)
         version, is_exact, note = resolve_npm_range(raw_version, npm_version_cache[name])
         resolved.append((name, version, ecosystem, source, is_exact, note))
     return resolved
