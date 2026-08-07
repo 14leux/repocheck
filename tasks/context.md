@@ -81,7 +81,8 @@ Close Verification:
 - Open Items table updated: yes — OIs touched: OI-009, OI-010, OI-014, OI-015 newly closed at this reconcile (previously stale-open despite being resolved); OI-016, OI-017, OI-018, OI-019 closed earlier this session with resolutions; OI-020, OI-021 remain OPEN with clear next steps
 - tasks/codebase_map.md updated: yes — entries: fixed a broken markdown table (stray blank line had split it in two), corrected 3 stale descriptions (code_scan.py/freshness_scan.py referencing now-closed OI-017/OI-018 as open), consolidated 3 function-level rows into their parent file's entry, verified all 30 tracked files accounted for via git ls-files, no mapped-but-deleted entries
 - tasks/wip.md reset to empty template: yes
-- git commit created: yes — see below
-- git push completed: yes — see below
-- git worktree audit: see below
+- git commit created: yes — commit 9b10ed8, message: "Session 2 close: reconcile Open Items and codebase map, checkpoint" (6 files changed). Full session-2 work landed across three earlier commits this session: a838720 (V1, M1-M8), ec6a922 (M9-M12), 8995554 (OI-016/017/018/019 fixes), 9b10ed8 (this close)
+- git push completed: yes — git log @{u}..HEAD returned no output, nothing sitting unpushed
+- branch: main (renamed from master at M12), tracking origin/main
+- git worktree audit: clean — single entry, D:/Projects/repocheck [main], no stray .claude/worktrees/* entries
 ```
