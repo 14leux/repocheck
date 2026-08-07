@@ -234,3 +234,5 @@ to.
   proposed and reviewed (DECISION 006).
 - Glossary for non-expert readers (DECISION 019).
 - LICENSE present (done) and `.gitignore` real.
+- **Repository flipped from private to public** (DECISION 022), and the
+  `master` → `main` default-branch rename settled either way.

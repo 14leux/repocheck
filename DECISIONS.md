@@ -800,3 +800,46 @@ from three working call sites than to guess its shape before any exist.
 and 018 (not their substance). MILESTONES.md reflects the new order.
 Session 2 starts with M2 code, not further design — the stop-scoping
 trigger recorded in M1.
+
+---
+
+## DECISION 022 — Amendment to Decision 005: repository starts private, goes public at M12
+
+**Date:** 2026-08-07
+
+**Context:** Decision 005 committed to MIT licence and a public
+repository from day one. At session 1 close it emerged that no git
+remote had ever been created — the entire session's work existed on one
+disk. Resolving that forced the public-vs-private question earlier and
+more concretely than Decision 005 had considered it: the choice was no
+longer abstract ("should this be public eventually") but immediate
+("does this specific commit go public right now").
+
+**Decision:** The repository is created **private**
+(`github.com/14leux/repocheck`) and flips to public at M12 (public
+release polish). The MIT licence is unchanged and already committed —
+only the timing of publication moves. Durability is satisfied
+immediately: the work is off this machine and recoverable regardless of
+visibility.
+
+**Rejected alternatives:**
+- **Public immediately, per Decision 005's letter** — rejected because
+  what exists today is scoping documentation and a decision log, not a
+  working tool; publishing a security tool's full reasoning before it
+  can scan anything invites evaluation against a standard it does not
+  yet claim to meet.
+- **Stay local-only, defer the remote to session 2** — rejected
+  outright; it leaves several hours of work on a single disk for no
+  benefit, and the durability rule exists precisely to prevent this.
+
+**Tradeoffs:** Loses the "build in public from the start" benefit
+Decision 005 implied — early contributors cannot find the project, and
+the decision history is not visible as it forms. Accepted as small:
+there is nothing yet for a contributor to contribute to, and M12 already
+exists as the natural publication gate.
+
+**Implications:** M12's acceptance criteria gain one item — flip the
+repository to public. Decision 005 stands on licence and on the
+intent to be public; only its timing is superseded here. Default branch
+is currently `master`; whether to rename to `main` before publication is
+worth settling at M12.

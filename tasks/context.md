@@ -80,7 +80,15 @@ Close Verification:
 - Open Items table updated: yes — OIs touched: OI-001 through OI-006 CLOSED with resolutions; OI-007, OI-008, OI-009, OI-010, OI-015 OPEN; OI-011, OI-012, OI-013, OI-014 PENDING (deferred from Socratic challenge, not blocking)
 - tasks/codebase_map.md updated: yes — entries: LICENSE and council-transcript-20260807T000000.md were missing from the map and have been added; no mapped-but-deleted entries; .gitignore noted as not yet existing
 - tasks/wip.md reset to empty template: yes — but see KNOWLEDGE.md: it was empty all session, not kept live, which is a discipline miss to correct in session 2
-- git commit created: [filled below]
-- git push completed: [filled below]
-- git worktree audit: [filled below]
+- git commit created: yes — commit 3c55615, message: "Session 1 close: RepoCheck fully scoped, mechanism validated, milestones defined" (12 files changed, 1669 insertions). Second commit follows for the DECISION 022 amendment.
+- git push completed: yes — no remote existed at first attempt; created github.com/14leux/repocheck (private, per DECISION 022) and pushed with upstream set
+- git log @{u}..HEAD empty: yes — command returned no output, nothing sitting unpushed
+- branch: master, tracking origin/master — default branch. `master` → `main` rename deferred to M12 (DECISION 022)
+- git worktree audit: clean — single entry, D:/Projects/repocheck [master], no stray .claude/worktrees/* entries
 ```
+
+**Note on the close:** the push step initially failed because no git
+remote had ever been created — the whole session existed on one disk.
+Resolved during close by creating a private repository (DECISION 022,
+amending Decision 005's public-from-day-one timing; MIT licence and the
+intent to publish are unchanged, publication moves to M12).
