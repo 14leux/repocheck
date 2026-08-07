@@ -24,7 +24,19 @@
 | `github_provider.py` | active | M7 — GitHubFileAccessProvider, the only v1 file-access implementation, moved verbatim from skeleton.py. |
 | `test_provider_swap.py` | active | M7 — proves FileAccessProvider swap works with zero changes to skeleton.py/code_scan.py, using a fake in-memory provider. |
 | `repocheck.py` | active | M8 — CLI entry point, zero scan logic, auto-detects repo/skill mode. **V1 complete as of this file.** |
+| `anthropic_provider.py` | active | M9 — AnthropicModelProvider, raw HTTP (no SDK dep), specific missing-key error. |
+| `deep_scan.py` | active | M9 — opt-in deep scan, high-risk file selection, prompt-injection-safe prompt. `--confirm` required to call the API. |
+| `verify_deep_scan.py` | active | M9 — live-verification script for the 2 acceptance criteria not yet checked (OI-020). Run once ANTHROPIC_API_KEY is available. |
+| `skills/repocheck/SKILL.md` | active | M10 — RepoCheck's own Claude Code skill wrapper. Scans clean under its own instruction-scan (dogfooding). |
+| `semver_resolve.py` | active | M11 fix — npm caret/tilde range resolution against the live registry, no third-party semver lib. Found needed by round-1 independent QA. |
+| `suppression.py` | active | M11 — `.repocheck-allow.json` suppression mechanism (OI-013), category+path matching, type-validated after a crash was found and fixed. |
 
-DECISIONS.md now has 22 entries (was 21 at session 1 close — Decision
-022 added during the close itself, map was one entry stale, corrected
-here).
+| `CONTRIBUTING.md` | active | M12 — red-flag-rule contribution process per DECISIONS.md #006. |
+
+DECISIONS.md now has 23 entries (DECISION 023 added at M10, resolving
+OI-007). `.agent/instructions.md`'s Open Items table now runs to
+OI-021 (M11's fix cycle added 2 new items, closed 6 previously-open
+ones). `README.md` was fully rewritten at M12 for real usage (install,
+usage, glossary) — no longer the session-1 idea-capture version.
+**ALL 12 MILESTONES COMPLETE as of this file.** Repo is public at
+github.com/14leux/repocheck, default branch `main`.

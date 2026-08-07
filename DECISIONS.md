@@ -843,3 +843,52 @@ repository to public. Decision 005 stands on licence and on the
 intent to be public; only its timing is superseded here. Default branch
 is currently `master`; whether to rename to `main` before publication is
 worth settling at M12.
+
+---
+
+## DECISION 023 — Resolves OI-007: skill call mechanism is "shell out to the CLI," deep scan runs on the session directly
+
+**Date:** 2026-08-07
+
+**Context:** OI-007 (open since session 1): how does the Claude Code
+skill wrapper actually invoke the core scan logic — shell out to a
+script, or import the library as a module? M8's CLI (`repocheck.py`)
+already existed and worked standalone by the time M10 started.
+
+**Decision:** The skill wrapper is `skills/repocheck/SKILL.md` itself —
+in Claude Code, a skill fundamentally *is* a markdown instruction file,
+not a code module, so "the wrapper" is the instructions telling the
+agent how to invoke `repocheck.py` via the Bash tool for the static
+scan. For the opt-in deeper review, the skill instructs the agent to
+list high-risk files via `deep_scan.py` *without* `--confirm` (no API
+call), then read and reason about those files directly in its own
+session — never shelling out to `deep_scan.py --confirm`, which is the
+standalone-CLI path requiring the user's own `ANTHROPIC_API_KEY`
+(Decisions 008/018). This satisfies M10's "deep scan runs on the
+session rather than requiring a separate key" criterion structurally,
+not just by convention.
+
+**Rejected alternatives:**
+- **Import the core library as a Python module directly in-session** —
+  rejected; Claude Code sessions interact with the filesystem/shell via
+  tools, not by importing arbitrary project code into the agent's own
+  runtime, so this doesn't match how skills actually execute.
+- **Skill shells out to `deep_scan.py --confirm` for deeper review** —
+  rejected; would require the user to hold a separate Anthropic API key
+  even when already inside a paid Claude Code session, double-charging
+  conceptually and contradicting Decision 008's cost model.
+
+**Tradeoffs:** The skill's "deeper review" instructions duplicate some
+of `deep_scan.py`'s reasoning discipline (untrusted-content handling,
+injection-attempt-as-finding) in prose rather than calling shared code
+directly — acceptable, since a skill's actual code path is bash calls
+and file reads, not Python imports, so some duplication between
+`SYSTEM_PROMPT` in `deep_scan.py` and `SKILL.md`'s prose is structural,
+not an oversight.
+
+**Implications:** `skills/repocheck/SKILL.md` is RepoCheck's real skill
+manifest going forward — any change to the CLI's invocation (flags,
+output format) needs a corresponding check that the skill's
+instructions still match. Confirmed clean under RepoCheck's own
+instruction-scan (dogfooding, M10) — see KNOWLEDGE.md for a real false
+positive this surfaced and fixed in `skill_scan.py` itself.

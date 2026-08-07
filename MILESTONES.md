@@ -24,10 +24,10 @@ up front — see DECISION 021.
 | 6 | Severity model + humanized verdict (both modes) | V1 | DONE |
 | 7 | Extract the pluggable interfaces from working code | V1 | DONE |
 | 8 | CLI wrapper — first genuinely usable release | V1 | DONE — **V1 COMPLETE** |
-| 9 | Opt-in deep scan (LLM reasoning pass) | Hardening | NOT STARTED |
-| 10 | Claude Code skill wrapper | Hardening | NOT STARTED |
-| 11 | Degraded-state, reproducibility, false-positive handling | Hardening | NOT STARTED |
-| 12 | Public release polish | Release | NOT STARTED |
+| 9 | Opt-in deep scan (LLM reasoning pass) | Hardening | IN PROGRESS — built, 3 of 5 criteria met, 2 need a live API call (OI-020) |
+| 10 | Claude Code skill wrapper | Hardening | DONE |
+| 11 | Degraded-state, reproducibility, false-positive handling | Hardening | DONE |
+| 12 | Public release polish | Release | DONE |
 
 ---
 
@@ -307,15 +307,34 @@ complete)."
 **Deliverable:** the targeted LLM reasoning pass over high-risk files
 (DECISION 007), opt-in and never automatic.
 
-**Acceptance criteria:**
+**Acceptance criteria — 3 of 5 met (session 2), 2 need a live API call:**
+- Cost and rough time stated before it runs; refuses to run without an
+  explicit opt-in. **Met** — `--confirm` gate verified: omitting it makes
+  zero API calls, pre-flight lists the exact files and states the cost
+  honestly (no fabricated dollar figure, points to Anthropic's own
+  pricing page instead).
+- Clear specific error when `ANTHROPIC_API_KEY` is unset (DECISION 014).
+  **Met** — verified: specific, actionable message with the exact
+  command to fix it.
+- `SKILL.md`/skill manifests always treated as high-risk (DECISION 015).
+  **Met** — verified against two real repos: manifest files and any
+  file the static pass already flagged are always selected.
 - All scanned content structurally delimited as untrusted data — a
   malicious `SKILL.md` cannot influence the analysis (DECISION 016).
-  Verified with a deliberate injection attempt, not assumed.
-- Cost and rough time stated before it runs; refuses to run without an
-  explicit opt-in.
-- Clear specific error when `ANTHROPIC_API_KEY` is unset (DECISION 014).
-- `SKILL.md`/skill manifests always treated as high-risk (DECISION 015).
+  Verified with a deliberate injection attempt, not assumed. **NOT yet
+  verified** — built (delimiter tags, explicit system-prompt language),
+  but no `ANTHROPIC_API_KEY` was available this session to actually run
+  the injection attempt against a live model. OI-020.
 - Catches at least one thing the static passes missed on a real example.
+  **NOT yet verified** — same reason. The test case itself is validated
+  (confirmed the paraphrased example produces zero static findings,
+  proving it's a real gap for the static pass), but whether deep scan
+  actually catches it needs the live call.
+
+**Lessons learned:** see KNOWLEDGE.md "Session 2 -- M9 opt-in deep scan
+(partial, honestly recorded)." `verify_deep_scan.py` is written and
+ready — run it the moment a real API key is available, then flip this
+milestone to DONE.
 
 ---
 
@@ -323,11 +342,30 @@ complete)."
 
 **Deliverable:** RepoCheck usable from inside a Claude Code session.
 
-**Acceptance criteria:**
-- Call mechanism decided and documented (OI-007).
-- No scan logic in the wrapper.
+**Acceptance criteria — all met (session 2):**
+- Call mechanism decided and documented (OI-007). Met — `SKILL.md` IS
+  the wrapper (a Claude Code skill is markdown, not code); it instructs
+  the agent to shell out to `repocheck.py` for the static scan. See
+  DECISION 023.
+- No scan logic in the wrapper. Met — `skills/repocheck/SKILL.md` is
+  pure instructions, zero code.
 - Deep scan runs on the session rather than requiring a separate key.
-- RepoCheck scans its own `SKILL.md` clean — dogfooding.
+  Met — the skill instructs listing high-risk files via `deep_scan.py`
+  without `--confirm` (no API call), then reading and reasoning about
+  them directly in-session, never shelling out to the API-key-requiring
+  path.
+- RepoCheck scans its own `SKILL.md` clean — dogfooding. Met, after a
+  real bug fix — the first run flagged the skill's own defensive
+  description of the instruction-override pattern as if it were an
+  actual attack. Fixed with a descriptive-context guard in
+  `skill_scan.py`; re-verified against both the original true-positive
+  test and the `browser-use` acceptance case with no regression.
+
+**Lessons learned:** see KNOWLEDGE.md "Session 2 -- M10 Claude Code
+skill wrapper." Notable pattern: a security tool describing or testing
+attack patterns in its own documentation is unusually likely to trip
+its own detector -- this is the second time this exact shape of bug
+appeared this session (the first was M6's IP-blocking test file).
 
 ---
 
@@ -336,26 +374,93 @@ complete)."
 **Deliverable:** the three deferred robustness gaps (OI-011, OI-012,
 OI-013), which matter once other people rely on the output.
 
-**Acceptance criteria:**
+**Acceptance criteria — all met (session 2), verified by two independent
+rounds of adversarial subagent QA, not self-testing:**
 - A source being down or rate-limited never silently looks like a clean
-  result — degraded scans say so in the verdict (OI-011).
-- Every result records ruleset version and scan timestamp (OI-012).
+  result — degraded scans say so in the verdict (OI-011). Met — every
+  pillar wrapped in try/except in `verdict.py`, a broken CVE/code-scan/
+  freshness/skill pillar shows `** DEGRADED SCAN **` and `VERDICT: ...
+  (DEGRADED)`, verified with both mocked exceptions and a real
+  nonexistent-repo 404. Round 1 QA found the initial `list_tree()` call
+  crashed uncaught before any pillar-level handling started — fixed,
+  re-verified clean in round 2.
+- Every result records ruleset version and scan timestamp (OI-012). Met
+  — `scan_timestamp` + `ruleset_versions` (code_scan, skill_scan,
+  freshness_scan) present in every text and JSON verdict, verified.
 - A documented suppression mechanism for known-good patterns, with the
-  `api-key-stdin` case as its first test (OI-013).
+  `api-key-stdin` case as its first test (OI-013). Met —
+  `.repocheck-allow.json` (`suppression.py`), category+path matching,
+  suppressed findings shown with their reason, never silently hidden.
+  Round 1 QA found a wrong-TYPE value crashed the whole scan, contradicting
+  the module's own "never blocks" guarantee — fixed with explicit
+  `isinstance` checks, re-verified clean.
+
+**Also fixed along the way, found by the same QA rounds (not originally
+in scope, but real and worth fixing before calling Hardening solid):**
+npm caret-range versions were treated as exact pins (`semver_resolve.py`,
+verified against real OSV.dev data, not just "different output");
+`repocheck.py` crashed with a raw traceback on a typo'd or bare repo
+name, and now exits non-zero on a failed/degraded scan instead of exit
+0; M10's false-positive guard was overfit and is now broader (though
+still, honestly, not complete — see below); several credential-
+exfiltration/shell-execute detection evasions closed in both scanners;
+an obfuscation false positive on long encoded strings (e.g. certs) with
+no decode/exec nearby.
+
+**Lessons learned:** see KNOWLEDGE.md "Session 2 -- two rounds of
+independent subagent QA." The core lesson: self-testing and independent
+adversarial testing find genuinely different classes of bugs — round 1
+found things the building session's own tests never tried; round 2,
+re-verifying round 1's own fixes, found that fixes which closed the
+exact reported case still had untested edges. This is not a sign of bad
+fixes, it's the expected shape of static pattern-matching security
+tooling, and it's precisely why DECISION 007 designed a deep-scan
+pillar as a generalizing complement rather than trying to make the
+static pass complete. OI-021 (a residual obfuscation false-positive
+from whole-file rather than proximity-based co-occurrence) is
+documented rather than chased further this session — the real fix
+needs AST-level analysis, a bigger undertaking than a regex tweak.
 
 ---
 
-## M12 — Public release polish · Release
+## M12 — Public release polish · Release · DONE
 
 **Deliverable:** the repo is something a stranger can use and contribute
 to.
 
-**Acceptance criteria:**
-- README rewritten for real usage, not idea capture.
-- Install instructions verified on a clean machine.
+**Acceptance criteria — all met (session 2):**
+- README rewritten for real usage, not idea capture. Met — real
+  install/usage instructions, what each mode checks, deep-scan cost
+  model, suppression mechanism, glossary, and pointers into
+  DECISIONS.md/KNOWLEDGE.md/MILESTONES.md rather than idea-capture prose.
+- Install instructions verified on a clean machine. Met, within reach —
+  confirmed zero external dependencies by grepping every import across
+  the codebase (pure stdlib + local modules only), and re-ran
+  `python repocheck.py pallets/itsdangerous` with `GITHUB_TOKEN` unset
+  to confirm the "token is optional" claim is actually true, not
+  assumed.
 - Contribution guidelines, including how a new red-flag rule gets
-  proposed and reviewed (DECISION 006).
-- Glossary for non-expert readers (DECISION 019).
-- LICENSE present (done) and `.gitignore` real.
+  proposed and reviewed (DECISION 006). Met — `CONTRIBUTING.md`, with
+  the versioned/human-reviewed ruleset process spelled out concretely
+  and linked to real examples from this session's own bug history.
+- Glossary for non-expert readers (DECISION 019). Met — folded into
+  README.md per DECISION 019's own guidance (content, not a new
+  discipline file).
+- LICENSE present (done) and `.gitignore` real. Met, both already in
+  place from session 1/M2.
 - **Repository flipped from private to public** (DECISION 022), and the
-  `master` → `main` default-branch rename settled either way.
+  `master` → `main` default-branch rename settled either way. Met —
+  confirmed via `gh api repos/14leux/repocheck`: `private: false`,
+  `visibility: public`, `default_branch: main`. Old `master` branch
+  deleted from the remote as standard housekeeping.
+
+**Lessons learned:** none new this session -- M12 was straightforward
+execution of decisions already made (Decision 022's public-at-M12 plan,
+Decision 006's ruleset-contribution model), not new discovery.
+
+---
+
+**ALL 12 MILESTONES COMPLETE.** V1 (M1–M8) has been usable since
+earlier this session; Hardening (M9 partial pending a live API key for
+OI-020, M10, M11) and Release (M12) are now done too. RepoCheck is a
+real, working, public tool.

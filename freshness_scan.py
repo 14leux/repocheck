@@ -33,7 +33,12 @@ from skeleton import (
     find_manifests,
     list_tree,
     parse_repo_arg,
+    resolve_package_versions,
 )
+
+# bumped whenever ABANDONED_THRESHOLD_DAYS or the classification logic
+# changes (DECISIONS.md #012 -- flagged as missing by independent QA)
+RULESET_VERSION = "freshness_scan-2026-08-07"
 
 ABANDONED_THRESHOLD_DAYS = 730  # ~2 years since the package's own latest release
 
@@ -141,8 +146,18 @@ def scan(owner, repo):
     now = datetime.now(timezone.utc)
     summary = {"current": 0, "behind, actively maintained": 0, "pinned and abandoned": 0, "unknown": 0}
 
-    print(f"Checking freshness for {len(packages)} dependencies...\n")
-    for name, version, eco, source in packages:
+    # npm ranges get resolved to a real published version first -- a raw
+    # "^4.1.9" was never a real version to look up a release date for
+    # (independent-QA-found bug, see semver_resolve.py)
+    resolved = resolve_package_versions(packages)
+    unresolved = sum(1 for _, v, _, _, _, _ in resolved if v is None)
+
+    print(f"Checking freshness for {len(resolved) - unresolved} resolvable of "
+          f"{len(resolved)} dependencies "
+          f"({unresolved} use an unresolvable version range)...\n")
+    for name, version, eco, source, is_exact, note in resolved:
+        if version is None:
+            continue
         lookup = FRESHNESS_LOOKUPS.get(eco)
         if lookup is None:
             summary["unknown"] += 1
@@ -154,9 +169,10 @@ def scan(owner, repo):
         latest, pinned_date, latest_date, versions_behind = result
         status, days_since_latest = classify(version, latest, pinned_date, latest_date, now)
         summary[status] += 1
+        label = f"{name}=={version}" if is_exact else f"{name}=={version} ({note})"
         if status != "current":
             print(
-                f"  [{status}] {name}=={version} ({eco}) -- {versions_behind} version(s) "
+                f"  [{status}] {label} ({eco}) -- {versions_behind} version(s) "
                 f"newer exist, latest is {latest} (released {days_since_latest} days ago)"
             )
 

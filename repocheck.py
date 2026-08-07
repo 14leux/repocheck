@@ -19,7 +19,7 @@ Usage:
 import re
 import sys
 
-from skeleton import parse_repo_arg
+from skeleton import InvalidRepoArgError, parse_repo_arg
 from verdict import repo_verdict, skill_verdict
 
 GITHUB_BLOB_PATTERN = r"github\.com/([^/]+)/([^/]+)/blob/[^/]+/(.+)$"
@@ -71,18 +71,32 @@ def main():
         print(__doc__)
         sys.exit(1)
 
-    mode, owner, repo, path = detect_target(args)
+    # top-level guard: no scan-related error should ever surface as a raw
+    # Python traceback to a CLI user. Found by independent QA -- a typo'd
+    # or nonexistent repo previously crashed uncaught here.
+    try:
+        mode, owner, repo, path = detect_target(args)
 
-    if mode == "repo":
-        repo_verdict(owner, repo, as_json)
-    elif mode == "skill":
-        if not path:
-            print("skill mode needs a path to SKILL.md (paste a GitHub blob URL, "
-                  "pass it as a second argument, or use --path)")
+        if mode == "repo":
+            ok = repo_verdict(owner, repo, as_json)
+        elif mode == "skill":
+            if not path:
+                print("skill mode needs a path to SKILL.md (paste a GitHub blob URL, "
+                      "pass it as a second argument, or use --path)")
+                sys.exit(1)
+            ok = skill_verdict(owner, repo, path, as_json)
+        else:
+            print(f"Unknown mode: {mode!r} (expected 'repo' or 'skill')")
             sys.exit(1)
-        skill_verdict(owner, repo, path, as_json)
-    else:
-        print(f"Unknown mode: {mode!r} (expected 'repo' or 'skill')")
+    except InvalidRepoArgError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    # found by independent QA: a degraded/failed scan previously exited 0,
+    # indistinguishable from success to any script or CI checking the
+    # exit code -- exit code reflects whether the scan completed
+    # reliably, not the security verdict color itself.
+    if ok is False:
         sys.exit(1)
 
 

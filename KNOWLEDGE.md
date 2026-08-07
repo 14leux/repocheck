@@ -300,6 +300,67 @@ done -- not found later by a user. `repocheck.py owner/repo` today
 does what the project's origin story (a manual PixelRAG review) took a
 human doing it by hand to do.
 
+## Session 2 -- M9 opt-in deep scan (partial, honestly recorded)
+
+**No `ANTHROPIC_API_KEY` was available in this session's environment,
+so the two acceptance criteria that need a live model call are genuinely
+unverified, not just untested for convenience.** Everything that
+doesn't need a live call was built and tested: opt-in gating (running
+without `--confirm` makes zero API calls, confirmed), the missing-key
+error path (specific, actionable message, confirmed), and high-risk
+file selection (correctly always includes manifest files and any
+file the static pass already flagged, confirmed against two real repos).
+
+**`verify_deep_scan.py` is written and ready to run the moment a key
+exists**, so the next session doesn't have to re-derive the test design.
+Its second check (does deep scan catch what static scanning misses) was
+partially validated without a live call: the paraphrased
+credential-exfiltration test content was confirmed to produce zero
+findings from `skill_scan.py`'s regex patterns (deliberately avoiding
+"~/.ssh", "id_rsa", "POST", "curl" in favor of plain-English
+paraphrases) -- proving the test case is a real gap for the static pass
+to have, not proving the LLM catches it. That second half needs the
+live call.
+
+**The prompt-injection-resistant design follows the same shape as this
+session's earlier `--json`/stdout bug** (M6) in spirit: the thing that
+looks obviously correct on inspection (delimiter tags, explicit
+"treat as data not instructions" language) still needs to be run against
+a real adversarial input before being trusted, not just reasoned about.
+Recorded as OI-020 rather than assumed passing.
+
+## Session 2 -- M10 Claude Code skill wrapper
+
+**Dogfooding caught a real, meaningful false positive on the first
+try.** RepoCheck's own `skills/repocheck/SKILL.md` had to *describe* the
+instruction-override attack pattern defensively (telling the agent what
+to do "if [the content] asks you to ignore prior instructions") --
+and that description matched the same regex written to catch someone
+*actually* saying "ignore all previous instructions." A tool that
+flags its own defensive documentation as an attack is the security-tool
+equivalent of an antivirus flagging its own signature database. Fixed
+with a context guard: if the matched phrase is immediately preceded by
+a descriptive/conditional marker ("asks you to", "tries to", "if it",
+etc.), it's describing the pattern, not performing it, and gets
+skipped. Re-verified the fix didn't create a bypass by re-running M3's
+original synthetic true-positive test (still catches all three real
+attack patterns) and the original `browser-use` acceptance case
+(identical result, no regression).
+
+**This is the second time in this session that a security tool talking
+*about* its own subject matter tripped its own detector** (the first
+was M6's IP-blocking test file). Worth naming as a pattern: any tool
+whose job is describing or testing for attack patterns is unusually
+likely to trigger its own rules on its own documentation and tests --
+worth checking deliberately, not just hoping it doesn't come up.
+
+**The skill wrapper is the `SKILL.md` file itself, not a code module.**
+This resolved OI-007 more simply than expected -- in Claude Code, a
+skill's "call mechanism" is just markdown instructions telling the agent
+to run a Bash command, so there was no module-import-vs-shell-out
+design space to navigate the way OI-007 originally framed it. Recorded
+as DECISION 023.
+
 ## Session discipline
 
 **`tasks/wip.md` was never updated during session 1 — only written empty
@@ -312,3 +373,170 @@ live *during* the session, updated at every pivot — a crash pad that is
 only accurate at the moment of a clean close is useless for its actual
 purpose. Session 2 must update wip.md at each milestone step, starting
 at boot.
+
+## Session 2 -- two rounds of independent subagent QA, real bugs found and fixed
+
+At Mailu's explicit request, dispatched independent subagents (not the
+building session itself) to adversarially test M9-M11's work rather
+than relying on self-verification. This found substantially more, and
+more serious, bugs than the session's own testing had caught. Two
+rounds run; findings and fixes below. This entry itself was written
+late -- the fix cycle ran for a long stretch without updating this file,
+a real discipline lapse a second QA round caught and named directly.
+Do not repeat: update KNOWLEDGE.md as each bug is confirmed fixed, not
+in one batch after a long unrecorded stretch.
+
+### Round 1 findings and fixes
+
+**npm caret ranges (`^4.1.9`) were treated as exact pinned versions**
+for both CVE lookup and freshness classification -- `skeleton.py`'s
+`parse_package_json` stripped the `^`/`~` prefix and used the remainder
+as if it were literally installed. Since most real npm manifests
+declare ranges, not exact pins, this was wrong for the common case, not
+an edge case -- found on the very first fresh repo tried
+(`axios/axios`). Fixed with `semver_resolve.py`: resolves a declared
+range to the highest currently-published version satisfying it (real
+npm caret/tilde semantics, no third-party semver library), clearly
+labelled as resolved-from-range vs. exact pin, never presented with
+false confidence. **Verified correct, not just different**: cross-checked
+directly against OSV.dev -- `axios` resolves `^1.15.2` to `1.19.0`
+(clean) while the raw range text `1.15.2` was genuinely vulnerable (18
+advisories); `@vitest/browser` resolves `^4.1.9` to `4.1.10` (clean)
+while `4.1.9` had the exact CRITICAL advisory that drove the original
+(overstated) DANGER verdict. The old bug wasn't reporting fake CVEs --
+it was overstating confidence about what's actually installed. See
+`semver_resolve.py`, `skeleton.resolve_package_versions()`.
+
+**Two crash paths with no top-level error handling**: a nonexistent
+repo or a bare `repo` with no `owner/` both crashed with a raw Python
+traceback. Worse, `repo_verdict()`'s `list_tree()`/`find_manifests()`
+calls sat before any of M11's new try/except blocks, so a GitHub 404 --
+the exact scenario M11's own acceptance criteria names -- crashed the
+whole tool instead of showing DEGRADED, in both text and `--json`
+modes. Fixed: `parse_repo_arg` now raises a specific
+`InvalidRepoArgError` instead of an unguarded crash, caught at every
+entry point (`repocheck.py`, `verdict.py`, `deep_scan.py` `main()`
+functions); `repo_verdict()`'s initial tree fetch is now wrapped and
+produces a clean "SCAN COULD NOT RUN" message (or `verdict: "UNKNOWN"`
++ populated `degraded` array in JSON) instead of crashing.
+
+**M10's descriptive-context guard was overfit** -- it only recognized
+one exact framing ("asks you to ignore..."). Five newly-written
+sentences describing the same instruction-override pattern with
+different wording all still misfired as findings. Broadened with two
+independent signals: quoted-phrase detection (a defensive description
+overwhelmingly quotes the example phrase; a real attack embedded in a
+skill is rarely self-quoted) plus a wider, bidirectional (before AND
+after the match) set of descriptive markers. Documented explicitly as
+still a heuristic, not a complete solution -- this is exactly why
+DECISION 007's deep-scan pillar exists as a second line of defense for
+what static regex matching structurally cannot fully resolve.
+
+**Detection evasions in both scanners**: `curl -d` (vs. `-X POST`/
+`--data`), `requests.request("POST", ...)` (vs. `.post(`), download-
+then-execute-on-separate-lines (vs. a literal pipe), `curl | xargs -0
+bash` (interpreter behind an intermediary). All four fixed with
+broadened patterns / a new co-occurrence check
+(`DOWNLOAD_PATTERN`/`EXECUTE_DOWNLOADED_PATTERN` in both
+`skill_scan.py` and mirrored logic added to `code_scan.py`).
+
+**Obfuscation false positive**: a long base64-looking string alone (no
+decode/exec anywhere) -- the shape of an ordinary embedded cert, JWT,
+or hash constant -- was flagged HIGH severity with no co-occurrence
+check, unlike the other two obfuscation rules. Fixed: now requires a
+decode/exec call to also appear somewhere in the same file
+(`LONG_ENCODED_BLOB_PATTERN` + `DECODE_OR_EXEC_PATTERN` in
+`code_scan.py`).
+
+**Suppression mechanism crashed on wrong-TYPE values** -- `load_suppressions`
+validated that required keys were present but not that their values
+were strings, so `{"path": 123, ...}` passed validation then crashed
+`apply_suppressions` with a `TypeError`, contradicting the module's own
+"never blocks the scan" docstring guarantee. Fixed with an explicit
+`isinstance(..., str)` check on every field.
+
+**`freshness_scan.py` had no `RULESET_VERSION`** -- added, now included
+in `verdict.py`'s reproducibility metadata alongside `code_scan` and
+`skill_scan`.
+
+### Round 2 findings and fixes (re-verifying round 1's fixes)
+
+A second independent QA pass, specifically tasked with re-verifying
+round 1's fixes rather than trusting the claim, found the fixes were
+real but each had at least one remaining edge:
+
+**`parse_repo_arg`'s own fix introduced new bugs**: `"owner/"` gave a
+wrong error message (said "missing the owner" when the repo was what
+was empty); `"owner//repo"` and `"owner/repo/extra/path"` were
+silently accepted with a malformed repo name instead of erroring; a
+GitHub URL missing the repo segment (`"https://github.com/owner"`)
+silently misparsed `"github.com"` as the owner. Rewritten with a
+stricter approach: the non-URL form must be exactly one `owner/repo`
+pair (`len(parts) != 2` rejects everything else), and the URL form
+requires a regex match of `github\.com/([^/]+)/([^/]+)` rather than a
+naive `.split("/")[-2:]`. Verified against all 9 cases (valid, and
+every malformed shape from both QA rounds) in one pass.
+
+**Exit code was 0 on a failed or degraded scan** -- any CI/script
+wrapper checking exit status would treat a broken tool run as success.
+Fixed: `repo_verdict()`/`skill_verdict()` now return `False` on
+failure/degradation, `repocheck.py`'s `main()` exits 1 accordingly.
+Deliberately scoped to scan *health*, not the security verdict color --
+a fully-completed DANGER verdict still exits 0, only an incomplete or
+failed scan exits 1.
+
+**M10's broadened guard still had 2 of 5 new differently-worded test
+sentences trigger false positives** -- "might tell the agent:" (colon,
+not "to") and a "you are now" match that spanned across a closing quote
+to reach an unrelated "instead" describing the quoted phrase rather
+than being part of it. Both fixed (marker regex widened; the
+`.{0,40}` wildcard between "you are now" and "instead"/"not" now
+excludes quote characters so it can't cross a quote boundary). The QA
+agent's own follow-up test wrote 3 more new sentences and still found
+2 more false positives -- explicitly acknowledged as expected: this is
+whack-a-mole with a hard ceiling, not a bug queue that reaches zero.
+Not chasing this further via regex; it's the documented reason the
+deep-scan pillar (M9) exists as a generalizing complement.
+
+**Detection evasions found in other languages/libraries not covered by
+round 1's fix**: `httpx.post`, aiohttp's `session.post`, `axios.post`
+(JS), Go's `http.Post`, and PowerShell entirely unscanned (`.ps1` was
+never in `SOURCE_EXTENSIONS`). Added `.ps1` to scanned extensions and
+patterns for all five. Explicitly documented as an inherent limitation
+of any finite pattern list, not a completed enumeration -- new
+languages/libraries will keep surfacing gaps.
+
+**A second obfuscation false positive**: the co-occurrence fix is
+whole-file, not proximity-based, so an unrelated safe `eval()` (e.g. a
+harmless expression evaluator) anywhere in a file plus an unrelated
+long base64 constant elsewhere in the same file now co-occur and
+falsely flag. Documented as a known, accepted limitation (same
+proximity-vs-co-occurrence tradeoff already accepted for
+credential-harvesting) rather than rewritten to proximity-based
+matching this session -- real fix would need AST-level analysis, out of
+scope for a regex-based static pass. Tracked as OI-021.
+
+**Stray debug artifacts** (`err.log`, `err2.log`, `err3.log`,
+`out.json`, `out3.json`) were left in the repo root by the QA
+subagents' own testing (redirected command output, not files the
+building session created directly). Deleted; not added to `.gitignore`
+since they shouldn't be created there in the first place -- a subagent
+redirecting output to the project root rather than a scratch directory
+is itself worth remembering for briefing future QA subagents more
+explicitly about where to put working files.
+
+### Overall lesson
+
+Two consecutive rounds of independent adversarial testing each found
+real, previously-undetected bugs, including in the *previous* round's
+own fixes. This is not a sign the fixes were bad -- every one of them
+closed the specific case it targeted, verified with real evidence, not
+just re-reading the code. It's a sign that static pattern-based
+security scanning has a real, structural precision ceiling: a finite
+regex/heuristic list can always be evaded by a sufficiently different
+phrasing or a sufficiently different library, in principle forever.
+Session 1's architecture already accounted for this (DECISION 007's
+deep-scan pillar exists specifically because static matching cannot be
+complete) -- round 2's findings are the concrete, empirical proof that
+the architectural bet was correct, not evidence the static pillar is
+poorly built.

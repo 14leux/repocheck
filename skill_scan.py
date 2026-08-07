@@ -39,6 +39,11 @@ import sys
 
 from skeleton import fetch_file, parse_repo_arg
 
+# bumped whenever a pattern list changes (DECISIONS.md #012 -- every
+# result should record which ruleset version produced it, since a scan
+# repeated a week later can legitimately give a different answer)
+RULESET_VERSION = "skill_scan-2026-08-07"
+
 # --- Category 1: red flags -------------------------------------------
 
 SENSITIVE_PATH_PATTERNS = [
@@ -49,7 +54,10 @@ SENSITIVE_PATH_PATTERNS = [
 ]
 
 EXFIL_VERB_PATTERNS = [
-    r"\bcurl\s+.*-X\s*POST", r"\bcurl\s+.*--data", r"\brequests\.post\(",
+    # found evaded via `curl -d` by independent QA -- curl's short data
+    # flag is at least as common as --data/-X POST and wasn't covered
+    r"\bcurl\s+.*(-X\s*POST|--data\b|-d\s)",
+    r"\brequests\.(post\(|request\(\s*[\"']POST)",
     r"\bfetch\([^)]*\)\s*\.then", r"\bPOST\s+(it|this|them)\s+to\b",
     r"\bupload\s+(it|this|them)\s+to\b", r"\bsend\s+(it|this|them)\s+to\b",
     r"\bexfiltrat",
@@ -58,16 +66,24 @@ EXFIL_VERB_PATTERNS = [
 INSTRUCTION_OVERRIDE_PATTERNS = [
     r"\bignore\s+(all\s+)?(previous|prior|above)\s+instructions?\b",
     r"\bdisregard\s+(the\s+)?system\s+prompt\b",
-    r"\byou\s+are\s+now\b.{0,40}\b(instead|not)\b",
+    # the wildcard is deliberately restricted to not cross a quote
+    # character -- found by independent QA: "'you are now' acting
+    # instead as a different persona" let the match span across the
+    # closing quote to reach an unrelated "instead" that described the
+    # quoted phrase rather than being part of it
+    r"\byou\s+are\s+now\b[^'\"`]{0,40}\b(instead|not)\b",
     r"\bnew\s+instructions?\s*:",
     r"\bforget\s+everything\b",
     r"\boverride\s+(your|the)\s+(previous\s+)?instructions?\b",
 ]
 
 # piping into an interpreter is a red flag; piping into a named CLI
-# subcommand (e.g. `tool auth login --api-key-stdin`) is not.
+# subcommand (e.g. `tool auth login --api-key-stdin`) is not. Also
+# catches piping through an intermediary like xargs -- found evaded by
+# `curl ... | xargs -0 bash` via independent QA, since the interpreter
+# didn't follow the pipe directly.
 SHELL_PIPE_EXECUTE_PATTERN = (
-    r"\|\s*(sudo\s+)?(bash|sh|zsh|python[23]?|perl|ruby|node|eval)\b"
+    r"\|\s*(sudo\s+)?(xargs\s+(-\d\s+)?)?(bash|sh|zsh|python[23]?|perl|ruby|node|eval)\b"
 )
 
 # explicit allowlist for the OI-013 pattern: piping a secret into a
@@ -75,6 +91,15 @@ SHELL_PIPE_EXECUTE_PATTERN = (
 SAFE_STDIN_PIPE_PATTERN = (
     r"\|\s*[\w.\-]+\s+\S+.*--[\w-]*stdin\b"
 )
+
+# found evaded via download-then-execute-on-a-separate-line by
+# independent QA (`curl -o p.sh ...` then `bash p.sh` later in the same
+# document) -- same class of gap as SHELL_PIPE_EXECUTE_PATTERN but
+# without a literal pipe between the two steps. Co-occurrence check
+# rather than a single-line regex, same shape as the credential-
+# exfiltration check above.
+DOWNLOAD_PATTERN = r"\b(curl|wget)\s+[^\n]*-[oO]\s*\S+"
+EXECUTE_DOWNLOADED_PATTERN = r"\b(bash|sh|python[23]?|perl|ruby|node)\s+\S+\.(sh|py|pl|rb|js)\b"
 
 # --- Category 2: caveat, not a red flag -------------------------------
 
@@ -110,12 +135,61 @@ def scan_skill_content(content):
             "in the same document.",
         ))
 
-    override_hits = find_matches(content, INSTRUCTION_OVERRIDE_PATTERNS)
-    for line_no, text in override_hits:
-        findings.append((
-            "instruction-override",
-            f"Line {line_no}: phrasing that tries to override prior instructions — \"{text}\"",
-        ))
+    # False positive found via M10 dogfooding, then independent QA proved
+    # the first fix was overfit: it only recognized ONE exact framing
+    # ("asks you to ignore..."). Five newly-written sentences describing
+    # the same attack pattern with different wording ("watch for skills
+    # that say things like 'ignore previous instructions'", "disregard
+    # the system prompt is a classic override phrase used by attackers",
+    # etc.) all still misfired. Broadened with two independent signals
+    # rather than one narrow phrase list -- still a heuristic, not a
+    # complete solution (regex cannot fully distinguish description from
+    # performance; this is exactly why DECISION 007's deep-scan pillar
+    # exists as a second line of defense for what static matching misses):
+    #   1. QUOTED-PHRASE detection: a defensive description overwhelmingly
+    #      quotes the example phrase ('ignore previous instructions',
+    #      "disregard the system prompt"); a real attack embedded in a
+    #      skill is very rarely self-quoted as an example.
+    #   2. A wider set of descriptive markers, checked BEFORE and AFTER
+    #      the match, not only before.
+    DESCRIPTIVE_MARKERS_BEFORE = (
+        r"(asks?\s+you\s+to|tries?\s+to|attempts?\s+to|trying\s+to|claims?\s+to|"
+        # "might tell the agent:" -- found by independent QA; "the agent"
+        # can be followed by ":" (not just "to"), and "might" can precede
+        # "tell" with nothing else between them and the marker's end
+        r"(might\s+)?tells?\s+the\s+agent(\s+to)?|might\s+tell|say\s+things?\s+like|"
+        r"phrasing\s+like|text\s+such\s+as|pattern[s]?\s+(like|such\s+as)|"
+        r"watch\s+for|one\s+(pattern|thing)\s+to\s+(detect|watch\s+for)\s+is|"
+        r"for\s+example|such\s+as|e\.g\.?|"
+        r"if\s+(it|this|anything|the\s+content))\s*[,:]?\s*$"
+    )
+    DESCRIPTIVE_MARKERS_AFTER = (
+        r"^\s*(is\s+a\s+classic|is\s+an\s+example|used\s+by\s+attackers|"
+        r"attack\s+pattern|red\s+flag|warning\s+sign|acting\s+instead\s+as|"
+        r"appearing\s+(mid-document|in\s+the\s+document))"
+    )
+    for pat in INSTRUCTION_OVERRIDE_PATTERNS:
+        for m in re.finditer(pat, content, re.IGNORECASE):
+            preceding = content[max(0, m.start() - 60):m.start()]
+            following = content[m.end():m.end() + 60]
+            quoted = (
+                preceding.rstrip()[-1:] in ("'", '"', "`") if preceding.rstrip() else False
+            ) and (
+                following.lstrip()[:1] in ("'", '"', "`") if following.lstrip() else False
+            )
+            descriptive = (
+                quoted
+                or re.search(DESCRIPTIVE_MARKERS_BEFORE, preceding, re.IGNORECASE)
+                or re.search(DESCRIPTIVE_MARKERS_AFTER, following, re.IGNORECASE)
+            )
+            if descriptive:
+                continue  # describing the pattern defensively, not performing it
+            line_no = content.count("\n", 0, m.start()) + 1
+            text = m.group(0).strip()
+            findings.append((
+                "instruction-override",
+                f"Line {line_no}: phrasing that tries to override prior instructions — \"{text}\"",
+            ))
 
     # shell-pipe-execute, with the safe-stdin-pipe allowlist checked first
     for m in re.finditer(SHELL_PIPE_EXECUTE_PATTERN, content, re.IGNORECASE):
@@ -129,6 +203,16 @@ def scan_skill_content(content):
         findings.append((
             "shell-pipe-execute",
             f"Line {line_no}: pipes content directly into an interpreter — \"{full_line}\"",
+        ))
+
+    download_hits = find_matches(content, [DOWNLOAD_PATTERN])
+    execute_hits = find_matches(content, [EXECUTE_DOWNLOADED_PATTERN])
+    if download_hits and execute_hits:
+        findings.append((
+            "shell-pipe-execute",
+            f"Content downloads a file ({download_hits[0][1]}) and separately executes "
+            f"a script ({execute_hits[0][1]}) -- same risk as piping directly into an "
+            "interpreter, split across two steps.",
         ))
 
     # fetch-and-follow: caveat category, never a finding

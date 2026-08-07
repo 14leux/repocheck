@@ -28,11 +28,23 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
+from code_scan import RULESET_VERSION as CODE_SCAN_VERSION
 from code_scan import iter_scan_targets, scan_file_content
+from freshness_scan import RULESET_VERSION as FRESHNESS_SCAN_VERSION
 from freshness_scan import FRESHNESS_LOOKUPS, classify
-from skeleton import fetch_file, find_manifests, list_tree, osv_batch_query, parse_repo_arg
+from skeleton import (
+    InvalidRepoArgError,
+    fetch_file,
+    find_manifests,
+    list_tree,
+    osv_batch_query,
+    parse_repo_arg,
+)
+from skill_scan import RULESET_VERSION as SKILL_SCAN_VERSION
 from skill_scan import scan_skill_content
+from suppression import apply_suppressions, load_suppressions
 
 SEVERITY_WEIGHT = {"critical": 4, "high": 3, "moderate": 2, "low": 1}
 COLOR_FOR_WEIGHT = {4: "DANGER", 3: "CAUTION", 2: "CAUTION", 1: "CAUTION", 0: "CLEAR"}
@@ -110,6 +122,15 @@ EXPLANATIONS = {
                "-- and the content can be different every time it's fetched",
         "attack": "classic \"curl | bash\" supply-chain risk: what you audited and "
                    "what actually runs can be two different things",
+    },
+    "unresolvable-version-range": {
+        "what": "a dependency declared with a version range RepoCheck could not resolve "
+                "to one specific version (e.g. '>=1.2 <2.0', a git URL, or a workspace reference)",
+        "why": "without knowing the actual installed version, RepoCheck cannot check it "
+               "against known vulnerabilities -- this is a coverage gap, not a finding "
+               "about the dependency itself",
+        "attack": "not an attack signal -- a reminder that this scan's CVE coverage has a "
+                   "blind spot here, worth checking manually",
     },
     "pinned and abandoned": {
         "what": "a dependency pinned to a version that hasn't been updated by its "
@@ -195,7 +216,28 @@ def repo_verdict(owner, repo, as_json):
           f"code red-flag scan, dependency freshness. Static only, free, no LLM calls.",
           file=sys.stderr)
 
-    tree = list_tree(owner, repo)
+    # fetching the tree itself can fail (repo doesn't exist, GitHub is
+    # down, rate-limited) -- found by independent QA: this previously
+    # crashed uncaught before any of the pillar-level degraded-state
+    # handling below even started. A scan that can't even list the
+    # repo's files is maximally degraded, not a crash.
+    try:
+        tree = list_tree(owner, repo)
+    except Exception as e:
+        message = f"Could not list {owner}/{repo}'s files: {e}"
+        if as_json:
+            print(json.dumps({
+                "repo": f"{owner}/{repo}", "mode": "repo", "verdict": "UNKNOWN",
+                "findings": [], "suppressed": [],
+                "scan_timestamp": datetime.now(timezone.utc).isoformat(),
+                "degraded": [{"pillar": "repo-listing", "reason": message}],
+            }, indent=2))
+        else:
+            print(f"\n** SCAN COULD NOT RUN -- {message} **")
+            print("This is not a clean result. Check the repo name and try again.")
+        return False  # found by independent QA: this previously exited 0,
+        # indistinguishable from success to any script/CI checking exit code
+
     manifests = find_manifests(tree)
     candidate_files = list(iter_scan_targets(tree))
     scan_count = min(len(candidate_files), 300)  # code_scan.py's MAX_FILES_TO_SCAN
@@ -214,81 +256,159 @@ def repo_verdict(owner, repo, as_json):
     )
 
     findings = []
+    # DECISIONS.md-adjacent OI-011: a pillar that fails must say so in
+    # the verdict, never silently look like "no findings" -- that's
+    # indistinguishable from "verified clean" to a reader, which is a
+    # worse failure mode than a scan that's just slow.
+    degraded = []
+
+    # --- manifest parsing + version resolution (shared by CVE + freshness) ---
+    # npm ranges (^1.2.3, ~1.2.3) are resolved to the highest currently-
+    # published matching version, never treated as if the range text
+    # were an exact version -- found by independent QA: the earlier
+    # version of this pillar stripped the ^/~ prefix and used the
+    # result as a literal version, which is wrong for the common case
+    # (most real package.json files declare ranges, not exact pins).
+    # See semver_resolve.py.
+    raw_packages = []
+    resolved_packages = []
+    unresolved_count = 0
+    try:
+        from skeleton import PARSERS, resolve_package_versions
+        for path, ecosystem in manifests:
+            filename = path.rsplit("/", 1)[-1]
+            content = fetch_file(owner, repo, path)
+            try:
+                deps = PARSERS[filename](content)
+            except Exception:
+                continue
+            for name, version in deps:
+                raw_packages.append((name, version, ecosystem, path))
+
+        resolved_packages = resolve_package_versions(raw_packages)
+        unresolved_count = sum(1 for _, v, _, _, _, _ in resolved_packages if v is None)
+    except Exception as e:
+        degraded.append({"pillar": "manifest-parsing", "reason": str(e)})
 
     # --- CVE pillar ---
-    packages = []
-    for path, ecosystem in manifests:
-        filename = path.rsplit("/", 1)[-1]
-        content = fetch_file(owner, repo, path)
-        from skeleton import PARSERS
-        try:
-            deps = PARSERS[filename](content)
-        except Exception:
-            continue
-        for name, version in deps:
-            packages.append((name, version, ecosystem, path))
-
-    if packages:
-        results = osv_batch_query([(n, v, e) for n, v, e, _ in packages])
-        seen_severity = {}
-        for (name, version, eco, source), result in zip(packages, results):
-            vulns = result.get("vulns", [])
-            for v in vulns:
-                if v["id"] not in seen_severity:
-                    seen_severity[v["id"]] = osv_vuln_severity(v["id"])
-                sev = seen_severity[v["id"]]
-                findings.append(make_finding(
-                    "cve", sev, f"{name}=={version} has known advisory {v['id']}", source,
-                ))
+    try:
+        checkable = [
+            (name, version, eco, source, note)
+            for name, version, eco, source, is_exact, note in resolved_packages
+            if version is not None
+        ]
+        if checkable:
+            results = osv_batch_query([(n, v, e) for n, v, e, _, _ in checkable])
+            seen_severity = {}
+            for (name, version, eco, source, note), result in zip(checkable, results):
+                vulns = result.get("vulns", [])
+                for v in vulns:
+                    if v["id"] not in seen_severity:
+                        seen_severity[v["id"]] = osv_vuln_severity(v["id"])
+                    sev = seen_severity[v["id"]]
+                    label = f"{name}=={version}" if note == "exact pin" else f"{name}=={version} ({note})"
+                    findings.append(make_finding(
+                        "cve", sev, f"{label} has known advisory {v['id']}", source,
+                    ))
+        if unresolved_count:
+            findings.append(make_finding(
+                "unresolvable-version-range", "low",
+                f"{unresolved_count} dependencies declare a version range RepoCheck could not "
+                f"resolve to a specific version -- NOT checked against OSV.dev, not assumed safe",
+                "manifest",
+            ))
+    except Exception as e:
+        degraded.append({"pillar": "cve", "reason": str(e)})
 
     # --- code red-flag pillar ---
-    for path in iter_scan_targets(tree):
-        try:
-            content = fetch_file(owner, repo, path)
-        except Exception:
-            continue
-        for category, fpath, line_no, detail in scan_file_content(path, content):
-            sev = {
-                "obfuscation": "high",
-                "credential-harvesting": "critical",
-                "suspicious-network-call": "moderate",
-                "suspicious-network-call-test-context": "low",
-                "install-time-script": "moderate",
-            }[category]
-            findings.append(make_finding(category, sev, f"{fpath}:{line_no} -- {detail}", fpath))
+    try:
+        for path in iter_scan_targets(tree):
+            try:
+                content = fetch_file(owner, repo, path)
+            except Exception:
+                continue
+            for category, fpath, line_no, detail in scan_file_content(path, content):
+                sev = {
+                    "obfuscation": "high",
+                    "credential-harvesting": "critical",
+                    "suspicious-network-call": "moderate",
+                    "suspicious-network-call-test-context": "low",
+                    "install-time-script": "moderate",
+                }[category]
+                findings.append(make_finding(category, sev, f"{fpath}:{line_no} -- {detail}", fpath))
+    except Exception as e:
+        degraded.append({"pillar": "code-red-flags", "reason": str(e)})
 
     # --- freshness pillar (capped severity contribution) ---
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    # uses resolved_packages (real resolved versions), not raw_packages
+    # -- a raw npm range like "^4.1.9" was never a real published
+    # version to look up a release date for in the first place.
     abandoned_count = 0
-    for name, version, eco, source in packages:
-        lookup = FRESHNESS_LOOKUPS.get(eco)
-        if lookup is None:
-            continue
-        result = lookup(name, version)
-        if result is None:
-            continue
-        latest, pinned_date, latest_date, _ = result
-        status, days = classify(version, latest, pinned_date, latest_date, now)
-        if status == "pinned and abandoned":
-            abandoned_count += 1
-            findings.append(make_finding(
-                "pinned and abandoned", "low",
-                f"{name}=={version}, last released {days} days ago", source,
-            ))
+    try:
+        now = datetime.now(timezone.utc)
+        for name, version, eco, source, is_exact, note in resolved_packages:
+            if version is None:
+                continue
+            lookup = FRESHNESS_LOOKUPS.get(eco)
+            if lookup is None:
+                continue
+            result = lookup(name, version)
+            if result is None:
+                continue
+            latest, pinned_date, latest_date, _ = result
+            status, days = classify(version, latest, pinned_date, latest_date, now)
+            if status == "pinned and abandoned":
+                abandoned_count += 1
+                label = f"{name}=={version}" if is_exact else f"{name}=={version} ({note})"
+                findings.append(make_finding(
+                    "pinned and abandoned", "low",
+                    f"{label}, last released {days} days ago", source,
+                ))
+    except Exception as e:
+        degraded.append({"pillar": "freshness", "reason": str(e)})
+
+    # --- suppression (OI-013) ---
+    suppressions = load_suppressions(owner, repo)
+    findings, suppressed = apply_suppressions(findings, suppressions)
 
     color = aggregate_color(findings)
+    meta = {
+        "scan_timestamp": datetime.now(timezone.utc).isoformat(),
+        "ruleset_versions": {
+            "code_scan": CODE_SCAN_VERSION,
+            "skill_scan": SKILL_SCAN_VERSION,
+            "freshness_scan": FRESHNESS_SCAN_VERSION,
+        },
+        "degraded": degraded,
+    }
 
     if as_json:
-        print(json.dumps({"repo": f"{owner}/{repo}", "mode": "repo", "verdict": color, "findings": findings}, indent=2))
-        return
+        print(json.dumps({
+            "repo": f"{owner}/{repo}", "mode": "repo", "verdict": color,
+            "findings": findings, "suppressed": suppressed, **meta,
+        }, indent=2))
+        return not degraded
 
-    print(f"VERDICT: {color}\n")
+    if degraded:
+        print("** DEGRADED SCAN -- one or more pillars could not complete. "
+              "Findings below are INCOMPLETE, not a clean result. **")
+        for d in degraded:
+            print(f"  [{d['pillar']}] {d['reason']}")
+        print()
+
+    print(f"VERDICT: {color}{'  (DEGRADED)' if degraded else ''}\n")
+    print(f"Scanned: {meta['scan_timestamp']} | ruleset: code_scan={CODE_SCAN_VERSION}, "
+          f"skill_scan={SKILL_SCAN_VERSION}, freshness_scan={FRESHNESS_SCAN_VERSION}\n")
     print("Findings:")
     render_findings(findings)
+    if suppressed:
+        print(f"\nSuppressed ({len(suppressed)}, per .repocheck-allow.json):")
+        for f in suppressed:
+            print(f"  [{f['category']}] {f['detail']} -- reason: {f['suppression_reason']}")
     if abandoned_count:
         print(f"\n({abandoned_count} dependencies are pinned to a version their "
               f"maintainer hasn't updated in years -- see 'pinned and abandoned' above.)")
+    return not degraded
 
 
 def skill_verdict(owner, repo, path, as_json):
@@ -296,31 +416,55 @@ def skill_verdict(owner, repo, path, as_json):
           f"instruction-content analysis. Free, no LLM calls, seconds.\n",
           file=sys.stderr)
 
-    content = fetch_file(owner, repo, path)
-    raw_findings, caveats = scan_skill_content(content)
-
+    degraded = []
     findings = []
-    for category, detail in raw_findings:
-        sev = {
-            "credential-exfiltration": "critical",
-            "instruction-override": "high",
-            "shell-pipe-execute": "high",
-        }[category]
-        findings.append(make_finding(category, sev, detail, path))
+    caveats = []
+    try:
+        content = fetch_file(owner, repo, path)
+        raw_findings, caveats = scan_skill_content(content)
+        for category, detail in raw_findings:
+            sev = {
+                "credential-exfiltration": "critical",
+                "instruction-override": "high",
+                "shell-pipe-execute": "high",
+            }[category]
+            findings.append(make_finding(category, sev, detail, path))
+    except Exception as e:
+        degraded.append({"pillar": "skill-instruction-scan", "reason": str(e)})
+
+    suppressions = load_suppressions(owner, repo)
+    findings, suppressed = apply_suppressions(findings, suppressions)
 
     color = aggregate_color(findings)
+    meta = {
+        "scan_timestamp": datetime.now(timezone.utc).isoformat(),
+        "ruleset_versions": {"skill_scan": SKILL_SCAN_VERSION},
+        "degraded": degraded,
+    }
 
     if as_json:
         print(json.dumps({
             "repo": f"{owner}/{repo}", "path": path, "mode": "skill",
-            "verdict": color, "findings": findings,
+            "verdict": color, "findings": findings, "suppressed": suppressed,
             "caveats": [{"category": c, "detail": d} for c, d in caveats],
+            **meta,
         }, indent=2))
-        return
+        return not degraded
 
-    print(f"VERDICT: {color}\n")
+    if degraded:
+        print("** DEGRADED SCAN -- could not complete. Result below is INCOMPLETE. **")
+        for d in degraded:
+            print(f"  [{d['pillar']}] {d['reason']}")
+        print()
+
+    print(f"VERDICT: {color}{'  (DEGRADED)' if degraded else ''}\n")
+    print(f"Scanned: {meta['scan_timestamp']} | ruleset: skill_scan={SKILL_SCAN_VERSION}\n")
     print("Findings:")
     render_findings(findings)
+    if suppressed:
+        print(f"\nSuppressed ({len(suppressed)}, per .repocheck-allow.json):")
+        for f in suppressed:
+            print(f"  [{f['category']}] {f['detail']} -- reason: {f['suppression_reason']}")
     print()
     if caveats:
         print("Caveats (not findings -- things RepoCheck cannot fully verify by scanning):")
@@ -328,6 +472,7 @@ def skill_verdict(owner, repo, path, as_json):
             print(f"  [{category}] {detail}")
     else:
         print("Caveats: none")
+    return not degraded
 
 
 def main():
@@ -341,7 +486,11 @@ def main():
         sys.exit(1)
 
     mode = args[0]
-    owner, repo = parse_repo_arg(args[1])
+    try:
+        owner, repo = parse_repo_arg(args[1])
+    except InvalidRepoArgError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
     if mode == "repo":
         repo_verdict(owner, repo, as_json)

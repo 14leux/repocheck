@@ -1,6 +1,6 @@
 # tasks/wip.md
 
-Current step: M8 done -- V1 COMPLETE (M1-M8 all DONE)
-Next concrete step: awaiting Mailu's direction -- continue into Hardening phase (M9-M12) this session, or stop for commit
-Done so far this session: M2 through M8 all done, V1 complete, 19 files created, multiple real bugs found and fixed via validation against real repos
+Current step: M12 done -- ALL 12 MILESTONES COMPLETE. Repo is public at github.com/14leux/repocheck, default branch renamed to main.
+Next concrete step: awaiting Mailu's direction -- commit everything, or keep working on tracked open items (OI-016 through OI-021), or stop here
+Done so far this session: M2-M12 all done (M9 partial pending OI-020's live API key) -- nothing from M9 onward committed yet (last commit a838720 covers V1/M1-M8 only); repo visibility and branch rename already pushed live (not a local-only change)
 Tried and failed: —

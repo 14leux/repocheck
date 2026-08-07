@@ -27,7 +27,13 @@ import sys
 
 from skeleton import fetch_file, list_tree, parse_repo_arg
 
-SOURCE_EXTENSIONS = {".py", ".js", ".ts", ".sh", ".rb", ".go"}
+# bumped whenever a pattern list changes (DECISIONS.md #012)
+RULESET_VERSION = "code_scan-2026-08-07"
+
+# .ps1 added after independent QA noted PowerShell wasn't scanned at
+# all -- download-and-execute via Invoke-WebRequest/iex is a common
+# real-world pattern, not scanning it at all was a real gap.
+SOURCE_EXTENSIONS = {".py", ".js", ".ts", ".sh", ".rb", ".go", ".ps1"}
 INSTALL_MANIFEST_FILES = {"setup.py", "package.json", "pyproject.toml"}
 
 # cap on files fetched per scan -- API-call count scales with file count,
@@ -37,11 +43,25 @@ MAX_FILES_TO_SCAN = 300
 
 # --- obfuscation --------------------------------------------------------
 
+# these two are direct, no false-positive risk: eval/exec/compile
+# wrapping a decode call IS the obfuscation, not a proxy for it.
 OBFUSCATION_PATTERNS = [
     r"\b(eval|exec)\s*\(\s*(base64\.b64decode|codecs\.decode|bytes\.fromhex)",
     r"\bexec\s*\(\s*compile\s*\(",
-    r"['\"][A-Za-z0-9+/]{200,}={0,2}['\"]",  # long base64-looking blob
 ]
+
+# found as a false positive by independent QA: a long base64-looking
+# string ALONE (no decode/exec anywhere nearby) matched this as HIGH
+# severity -- but embedded certs, JWTs, data-URI images, and hash
+# constants are ordinary in real code and look identical to this
+# pattern. Fixed with a co-occurrence requirement (same shape as the
+# credential-harvesting check below): only a red flag if the same file
+# ALSO contains something that decodes/executes, anywhere in the file,
+# not just adjacent to the blob.
+LONG_ENCODED_BLOB_PATTERN = r"['\"][A-Za-z0-9+/]{200,}={0,2}['\"]"
+DECODE_OR_EXEC_PATTERN = (
+    r"\b(eval|exec|base64\.b64decode|codecs\.decode|bytes\.fromhex|atob)\s*\("
+)
 
 # --- credential harvesting (co-occurrence, same limitation as skill_scan) ---
 
@@ -52,9 +72,23 @@ SENSITIVE_PATH_PATTERNS = [
 ]
 
 NETWORK_SEND_PATTERNS = [
-    r"\bcurl\s+.*-X\s*POST", r"\brequests\.post\(",
+    # found evaded via `curl -d` and `requests.request("POST", ...)` by
+    # independent QA -- neither was covered by the original patterns
+    r"\bcurl\s+.*(-X\s*POST|--data\b|-d\s)",
+    r"\brequests\.(post\(|request\(\s*[\"']POST)",
     r"\bfetch\([^)]*\)\s*\.then", r"\burllib\.request\.urlopen\(",
     r"\bsocket\.socket\(",
+    # a second QA pass found these common libraries entirely uncovered:
+    # httpx/aiohttp (Python), axios (JS/Node), net/http (Go), and
+    # PowerShell's equivalents now that .ps1 is scanned. A finite
+    # pattern list can never cover every HTTP client in every language
+    # -- documented as an inherent limitation, not silently pretended
+    # away (this is exactly what DECISION 007's deep-scan pillar exists
+    # to catch beyond what static patterns can enumerate).
+    r"\bhttpx\.post\(", r"\bsession\.post\(",  # aiohttp's common usage shape
+    r"\baxios\.post\(",
+    r"\bhttp\.Post\(",  # Go
+    r"\bInvoke-(RestMethod|WebRequest)\b[^\n]*-Method\s+POST",  # PowerShell
 ]
 
 # --- suspicious network calls -------------------------------------------
@@ -101,6 +135,14 @@ def scan_file_content(path, content):
 
     for line_no, text in find_matches(content, OBFUSCATION_PATTERNS):
         findings.append(("obfuscation", path, line_no, text))
+
+    long_blob_hits = find_matches(content, [LONG_ENCODED_BLOB_PATTERN])
+    if long_blob_hits and re.search(DECODE_OR_EXEC_PATTERN, content, re.IGNORECASE):
+        findings.append((
+            "obfuscation", path, long_blob_hits[0][0],
+            f"long encoded string ({long_blob_hits[0][1][:40]}...) alongside a decode/exec "
+            "call elsewhere in the file",
+        ))
 
     sensitive_hits = find_matches(content, SENSITIVE_PATH_PATTERNS)
     network_hits = find_matches(content, NETWORK_SEND_PATTERNS)

@@ -108,13 +108,51 @@
 - [x] M8 acceptance: `--json` verified end to end through the CLI, both modes
 - [x] **V1 COMPLETE: M1-M8 all DONE**
 
-## Next up (Session 3) -- Hardening phase (M9-M12), not V1-blocking
+## Session 2 -- M9 opt-in deep scan, built but not fully verified (done this session)
 
-- [ ] M9: opt-in deep scan (LLM reasoning pass) -- needs prompt-injection-resistant handling verified with a deliberate injection attempt (DECISIONS.md #016)
-- [ ] M10: Claude Code skill wrapper -- resolve OI-007 (call mechanism) here, not before
-- [ ] M11: degraded-state handling (OI-011), reproducibility/versioning (OI-012), false-positive/allowlist mechanism (OI-013)
-- [ ] M12: public release polish, flip repo from private to public (DECISIONS.md #022)
+- [x] M9: `anthropic_provider.py` (AnthropicModelProvider, raw HTTP, no SDK dependency) + `deep_scan.py` (high-risk selection, prompt-injection-safe prompt, opt-in `--confirm` gate)
+- [x] M9 acceptance: opt-in gating verified (no --confirm = zero API calls)
+- [x] M9 acceptance: missing-API-key error verified (specific, actionable message)
+- [x] M9 acceptance: high-risk file selection verified against 2 real repos
+- [ ] M9 acceptance NOT verified: prompt-injection resistance needs a live API call (OI-020)
+- [ ] M9 acceptance NOT verified: "catches what static misses" needs a live API call -- test case itself confirmed valid (paraphrase evades regex), `verify_deep_scan.py` ready to run
+
+## Session 2 -- M10 Claude Code skill wrapper (done this session)
+
+- [x] M10: `skills/repocheck/SKILL.md` -- the skill wrapper itself, instructs shell-out to repocheck.py for static scan, in-session reasoning for deep review (resolves OI-007, DECISION 023)
+- [x] M10 acceptance: dogfooding found and fixed a real false positive -- RepoCheck's own defensive description of the instruction-override pattern tripped its own detector
+- [x] Fixed with a descriptive-context guard in skill_scan.py, re-verified against M3's true-positive test and the browser-use acceptance case (no regression)
+
+## Session 2 -- M11 done, two rounds of independent QA, real bugs found and fixed (done this session)
+
+- [x] Dispatched 2 independent adversarial-QA subagents (not self-testing) against M9-M11's work, per Mailu's explicit request
+- [x] Round 1 found 7 real bugs: npm caret-ranges treated as exact pins, 2 crash paths (no top-level error handling), M10's guard overfit, 4 detection evasions, an obfuscation false positive, a suppression type-crash, missing freshness ruleset version
+- [x] Fixed all 7, verified each with real command output (not just re-reading the code)
+- [x] Round 2 re-verified round 1's fixes independently and found each still had an edge: parse_repo_arg's own fix had new bugs, exit code was 0 on failure, M10's guard still had 2/5 new false positives, more HTTP-library evasions (httpx/aiohttp/axios/Go/PowerShell), a second obfuscation false-positive shape
+- [x] Fixed what's reasonably fixable (parse_repo_arg rewritten stricter, exit code now reflects scan health, guard broadened further, 5 more patterns added, .ps1 now scanned)
+- [x] Documented OI-021 (proximity vs. whole-file co-occurrence) as an accepted limitation rather than chased further -- real fix needs AST analysis
+- [x] Cleaned up stray debug files left by subagent testing (err*.log, out*.json)
+- [x] M11 acceptance criteria (OI-011/012/013) all met and verified
+- [x] OI-008 (severity model) retroactively closed -- was implemented in M6 but never marked closed
+
+## Session 2 -- M12 public release polish, ALL 12 MILESTONES COMPLETE (done this session)
+
+- [x] M12: README.md rewritten for real usage (install, usage, glossary, all four DECISIONS.md/KNOWLEDGE.md/MILESTONES.md pointers)
+- [x] M12 acceptance: install instructions verified -- zero external deps confirmed by grep, GITHUB_TOKEN-optional claim re-tested with it unset
+- [x] M12: CONTRIBUTING.md written -- red-flag-rule proposal process per DECISIONS.md #006
+- [x] M12: glossary folded into README.md per DECISIONS.md #019
+- [x] M12: repo flipped private -> public, confirmed via gh api
+- [x] M12: default branch renamed master -> main, old branch deleted from remote
+- [x] Final safety scan for accidentally committed secrets before/after going public -- clean
+
+## Next up (Session 3+) -- tracked technical debt, no milestones left
+
+All 12 milestones are DONE. Remaining work is tracked open items, not
+blocking anything:
+
+- [ ] OI-020: run `verify_deep_scan.py` once ANTHROPIC_API_KEY is available, flip M9 fully DONE
 - [ ] OI-016: find and test against a real malicious skill sample to fully close M3
 - [ ] OI-017: API-call-count scaling for large repos
 - [ ] OI-018: Go ecosystem freshness lookup
 - [ ] OI-019: concurrency/caching for verdict.py's ~6min wall-clock time on large repos
+- [ ] OI-021: proximity-based obfuscation co-occurrence (needs AST analysis)
