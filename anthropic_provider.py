@@ -39,8 +39,11 @@ class AnthropicModelProvider(ModelProvider):
                 "ANTHROPIC_API_KEY is not set. Deep scan needs your own Anthropic "
                 "API key to run (DECISIONS.md #014/#018) -- set it with:\n"
                 "  export ANTHROPIC_API_KEY=sk-ant-...\n"
-                "Get a key at https://console.anthropic.com/settings/keys. "
-                "The free static scan does not need this -- only --deep-scan does."
+                "Get a key at https://console.anthropic.com/settings/keys -- for "
+                "a one-off scan, consider giving it a short expiration there "
+                "(e.g. 1 day) so it stops working on its own afterward. See "
+                "README.md 'Protecting your API key' for the full picture. "
+                "The free static scan does not need this -- only deep scan does."
             )
 
         body = json.dumps({

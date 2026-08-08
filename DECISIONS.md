@@ -878,6 +878,37 @@ not just by convention.
   even when already inside a paid Claude Code session, double-charging
   conceptually and contradicting Decision 008's cost model.
 
+---
+
+## DECISION 024 — Display name rebranded to "Dr. RepoCheck"; technical identifiers unchanged
+
+**Date:** 2026-08-08
+
+**Context:** Mailu asked for the tool to be renamed "Dr. RepoCheck" and
+for the README to be rewritten in humanized, psychology-informed
+language for a layman new to vibe coding, plus a full API-key-hygiene
+section (dos/don'ts, why a key is requested, expiring/scoped keys).
+
+**Decision:** Rebrand is display-only. Changed: README.md title/prose,
+`skills/repocheck/SKILL.md`'s `# Dr. RepoCheck` heading, `repocheck.py`'s
+module docstring banner. Unchanged: the `name: repocheck` SKILL.md
+frontmatter slug, the GitHub repo name/URL (`14leux/repocheck`), the
+Python module/file names, and every CLI invocation (`python
+repocheck.py ...`). Also added: a "Protecting your API key" README
+section (env vars, expiring keys via the Anthropic Console — 3h/1d/7d/
+30d/custom/never — workspace scoping, rotation, what never to do with a
+key) and matching short pointers in `anthropic_provider.py`'s
+`MissingApiKeyError` message and `deep_scan.py`'s `preflight()` output,
+sourced from Anthropic's own key-management docs and the OWASP Secrets
+Management Cheat Sheet rather than invented from assumption.
+
+**Rejected alternative:** Renaming the GitHub repository and all
+technical identifiers to match. Rejected — that would 404 every existing
+clone URL, install command, and any external link already pointing at
+`14leux/repocheck`; GitHub's redirect-on-rename only covers the
+repository page itself, not `git clone`/`pip`-style references baked
+into docs elsewhere. A cosmetic rename isn't worth that breakage.
+
 **Tradeoffs:** The skill's "deeper review" instructions duplicate some
 of `deep_scan.py`'s reasoning discipline (untrusted-content handling,
 injection-attempt-as-finding) in prose rather than calling shared code

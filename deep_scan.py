@@ -114,10 +114,15 @@ def preflight(paths):
         print(f"  {p}")
     print(
         "\nThis will make one Anthropic API call per file above, using your own "
-        "ANTHROPIC_API_KEY. Exact cost depends on file size and your account's "
-        "current rates -- check https://console.anthropic.com for current "
-        "pricing, RepoCheck does not estimate a dollar figure it can't keep "
-        "accurate. This is opt-in and will NOT run without --confirm.\n"
+        "ANTHROPIC_API_KEY -- it goes straight from your machine to Anthropic, "
+        "RepoCheck never stores or forwards it anywhere else. Exact cost depends "
+        "on file size and your account's current rates -- check "
+        "https://console.anthropic.com for current pricing, RepoCheck does not "
+        "estimate a dollar figure it can't keep accurate. Tip: keys created in "
+        "the console can be given a short expiration (e.g. 1 day), so a one-off "
+        "key like this one stops working on its own when you're done -- see "
+        "README.md 'Protecting your API key'. This is opt-in and will NOT run "
+        "without --confirm.\n"
     )
 
 

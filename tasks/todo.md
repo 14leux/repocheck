@@ -181,7 +181,25 @@
 - [x] OI-014 (v1 scope realistic for a solo builder?) closed with the empirical answer -- yes, all 12 milestones shipped
 - [x] tasks/codebase_map.md reconciled -- fixed a broken table (stray blank line), 3 stale descriptions, consolidated 3 function-level rows into their parent file entries
 
-## Next up (Session 3+) -- tracked technical debt, no milestones left
+## Session 3 -- rebrand + humanized README + API key hygiene
+
+- [x] Renamed display name to "Dr. RepoCheck" (README, SKILL.md heading,
+      repocheck.py docstring banner) -- technical identifiers (repo URL,
+      module names, `name: repocheck` slug, CLI invocation) left
+      unchanged deliberately, see DECISIONS.md #024
+- [x] Rewrote README intro in humanized, psychology-informed language
+      (social proof, optimism bias, vibe-coding trust-speed framing) for
+      a reader new to security review, not a security specialist
+- [x] Added "Protecting your API key" README section (env vars, expiring
+      keys via Anthropic Console 3h/1d/7d/30d/custom/never, workspace
+      scoping, rotation cadence, do/don't list) plus a "why RepoCheck
+      asks for your own key" explainer -- sourced from Anthropic's docs
+      and the OWASP Secrets Management Cheat Sheet, not assumed
+- [x] Surfaced a short key-hygiene pointer at the two places a user
+      actually meets the ask: anthropic_provider.py's MissingApiKeyError
+      message, deep_scan.py's preflight() output
+
+## Next up (Session 4+) -- tracked technical debt, no milestones left
 
 All 12 milestones are DONE. Remaining work is tracked open items, not
 blocking anything:

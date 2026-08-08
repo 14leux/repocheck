@@ -2,6 +2,60 @@
 
 **Status:** CLOSED
 
+## Session 3 — Rebrand and humanized public-facing docs
+
+**Goal:** Rename the tool's display name to "Dr. RepoCheck," rewrite the
+README to explain the tool to a security-layman new to vibe coding using
+plain psychology (why trust gets granted on autopilot, why that's riskier
+with an AI agent driving), and add a full API-key-hygiene section
+explaining why a key is requested and how to protect it.
+
+**What was done:** README.md's intro rewritten around social proof /
+optimism bias and the vibe-coding trust-speed gap; a "Protecting your API
+key" section added (env vars, Anthropic Console expiring keys —
+3h/1d/7d/30d/custom/never — workspace scoping, rotation, do/don't list,
+sourced from Anthropic's own docs and the OWASP Secrets Management Cheat
+Sheet via WebSearch, not invented); an explainer for why RepoCheck asks
+for the user's own key rather than proxying one. Display name changed to
+"Dr. RepoCheck" in README.md, `skills/repocheck/SKILL.md`'s heading, and
+`repocheck.py`'s docstring banner — deliberately not touching the GitHub
+repo name, module names, or CLI invocation (DECISIONS.md #024), which
+would break existing clone/install commands for a cosmetic gain. Added
+matching short key-hygiene pointers at the two places a user actually
+hits the API-key ask: `anthropic_provider.py`'s `MissingApiKeyError` and
+`deep_scan.py`'s `preflight()` output.
+
+**Next session starts with:** no milestones remain — all 12 are DONE.
+Same two open items as before, neither touched this session: OI-020
+(live deep-scan verification, needs a real ANTHROPIC_API_KEY) and OI-021
+(proximity-based obfuscation matching, AST-level, deferred).
+
+**Blockers:** none.
+
+**Milestone status:** unchanged from session 2 close — M1–M8, M10, M11,
+M12 DONE; M9 IN PROGRESS pending OI-020.
+
+```
+Close Verification:
+- KNOWLEDGE.md updated: no -- nothing new this session (content/docs
+  work, no bugs found or design decisions requiring a learnings entry)
+- DECISIONS.md updated: yes -- DECISION 024 (rebrand scope: display-only,
+  technical identifiers unchanged, why)
+- tasks/todo.md updated: yes -- Session 3 section added, all 4 items [x]
+- Open Items table updated: no -- none touched this session (OI-020,
+  OI-021 unchanged, still OPEN)
+- tasks/codebase_map.md updated: no -- reconcile ran clean, no files
+  added/removed/renamed this session (README.md/SKILL.md/anthropic_
+  provider.py/deep_scan.py/repocheck.py all pre-existing mapped entries,
+  edited in place, not moved)
+- tasks/wip.md reset to empty template: yes
+- git commit created: yes -- see below
+- git push completed: yes -- see below, git log @{u}..HEAD checked empty
+- git worktree audit: clean -- single entry, D:/Projects/repocheck [main]
+```
+
+---
+
 ## Session 2 — Build, hardening, public release, and open-item cleanup
 
 **Goal:** Take RepoCheck from a validated-but-unbuilt scoping document

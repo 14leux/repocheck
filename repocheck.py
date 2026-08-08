@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RepoCheck M8 -- CLI wrapper. `repocheck <target>` is the first
+Dr. RepoCheck M8 -- CLI wrapper. `repocheck <target>` is the first
 genuinely usable release; V1 is done when this works.
 
 Contains no scan logic of its own (DECISIONS.md #002) -- everything

@@ -3,7 +3,7 @@ name: repocheck
 description: "Check whether a GitHub repo or Claude Code skill is safe to trust before installing or running it -- CVE lookup, code/instruction red-flag scanning, dependency freshness, and an opt-in deeper review."
 ---
 
-# RepoCheck
+# Dr. RepoCheck
 
 Security scanner for a GitHub repo or a Claude Code skill, run before
 trusting it. The static scan is free and the default; a deeper review
