@@ -64,6 +64,26 @@ cd repocheck
 python repocheck.py pallets/itsdangerous
 ```
 
+### Calling it from other projects
+
+The command only needs an absolute path — you don't have to `cd` into
+this repo every time. Two ways to make `repocheck owner/repo` work from
+anywhere:
+
+- **A wrapper on your `PATH`:** drop a one-line script that calls
+  `python /absolute/path/to/repocheck.py "$@"` into a directory already
+  on your `PATH` (e.g. `~/.local/bin`), name it `repocheck` (and
+  `repocheck.cmd` on Windows for PowerShell/cmd.exe). Then
+  `repocheck owner/repo` works from any terminal, in any project.
+- **The Claude Code skill, installed user-wide:** copy
+  `skills/repocheck/SKILL.md` to your user-level Claude Code skills
+  folder (e.g. `~/.claude/skills/repocheck/SKILL.md` on this machine),
+  with the relative `python repocheck.py` calls swapped for the
+  absolute path to this repo — since an agent session's working
+  directory will be whatever project you're actually in, not this one.
+  Once installed there, any Claude Code session in any project can run
+  a check without you leaving that project.
+
 ## Usage
 
 ```bash

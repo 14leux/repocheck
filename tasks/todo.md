@@ -199,6 +199,25 @@
       actually meets the ask: anthropic_provider.py's MissingApiKeyError
       message, deep_scan.py's preflight() output
 
+## Session 3 (cont.) -- machine-local install: callable from anywhere
+
+- [x] Confirmed "install" is really just clone + run (pure stdlib) --
+      verified Python 3.13.14 present, ran a real scan against
+      pallets/itsdangerous end-to-end, VERDICT: CLEAR
+- [x] Added PATH wrappers so `repocheck owner/repo` works from any
+      project/shell: `~/.local/bin/repocheck.cmd` (PowerShell/cmd.exe)
+      and `~/.local/bin/repocheck` (Git Bash) -- both call the absolute
+      path to `D:\Projects\repocheck\repocheck.py`. Tested from an
+      unrelated cwd in both shells.
+- [x] Installed the Claude Code skill user-wide at
+      `~/.claude/skills/repocheck/SKILL.md` (Mailu chose this over
+      terminal-command-only) -- adapted from the project-local skill
+      with absolute paths since an agent session's cwd is whatever
+      project it's actually in, not this repo. Confirmed it now appears
+      in the available-skills listing.
+- [x] Documented both paths ("Calling it from other projects") in
+      README.md's Install section
+
 ## Next up (Session 4+) -- tracked technical debt, no milestones left
 
 All 12 milestones are DONE. Remaining work is tracked open items, not
