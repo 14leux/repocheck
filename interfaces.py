@@ -59,6 +59,16 @@ class FileAccessProvider(ABC):
                 result[path] = e
         return result
 
+    def fetch_repo_description(self, owner, repo):
+        """
+        Return the host's own one-line repo description (e.g. GitHub's
+        "About" blurb), or None if unavailable. Default implementation
+        returns None -- a provider that has no such metadata (or hasn't
+        implemented this yet) degrades to verdict.py's README-paragraph
+        fallback rather than raising.
+        """
+        return None
+
 
 class ModelProvider(ABC):
     @abstractmethod

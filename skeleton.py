@@ -137,6 +137,10 @@ def fetch_all_files(owner, repo, paths):
     return _provider.fetch_all_files(owner, repo, paths)
 
 
+def fetch_repo_description(owner, repo):
+    return _provider.fetch_repo_description(owner, repo)
+
+
 def find_manifests(tree):
     found = []
     for entry in tree:

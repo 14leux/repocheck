@@ -20,9 +20,9 @@
 | `skill_scan.py` | active | Skill-mode instruction scan — credential-exfil (incl. env-var-shaped secrets), instruction-override (broadened guard), shell-pipe-execute (incl. xargs/download-then-execute), fetch-and-follow caveat |
 | `code_scan.py` | active | Repo-mode code red-flag scan — obfuscation (co-occurrence-gated), credential-harvesting (multi-language/library), suspicious network calls (private-IP-excluded), install-time scripts. Scans `.ps1` too |
 | `freshness_scan.py` | active | Dependency freshness — PyPI, npm, and Go (case-encoded module proxy), concurrent lookups |
-| `verdict.py` | active | Severity model + humanized verdict — both modes, `--json`, degraded-state handling, suppression, reproducibility metadata, concurrent + bulk-fetch pillars |
-| `interfaces.py` | active | `FileAccessProvider` (extracted, proven swappable, `fetch_all_files` bulk-fetch method) and `ModelProvider` (forward-defined for M9) |
-| `github_provider.py` | active | `GitHubFileAccessProvider` — per-file contents API plus `fetch_all_files` (one tarball download, graceful per-file fallback verified with a real simulated failure) |
+| `verdict.py` | active | Severity model + humanized verdict — both modes, `--json`, degraded-state handling, suppression, reproducibility metadata, concurrent + bulk-fetch pillars, "about this repo/skill" summary (DECISIONS.md #025) |
+| `interfaces.py` | active | `FileAccessProvider` (extracted, proven swappable, `fetch_all_files` bulk-fetch method, `fetch_repo_description` default-None hook) and `ModelProvider` (forward-defined for M9) |
+| `github_provider.py` | active | `GitHubFileAccessProvider` — per-file contents API plus `fetch_all_files` (one tarball download, graceful per-file fallback verified with a real simulated failure) and `fetch_repo_description` (GitHub's own repo `description` field) |
 | `semver_resolve.py` | active | npm caret/tilde range resolution against the live registry, no third-party semver lib |
 | `suppression.py` | active | `.repocheck-allow.json` suppression mechanism, category+path matching, type-validated |
 | `concurrency.py` | active | Shared thread-pool helper (`parallel_map`), ~9x measured speedup, used by verdict.py/freshness_scan.py/skeleton.py |
@@ -31,7 +31,7 @@
 | `anthropic_provider.py` | active | `AnthropicModelProvider` — raw HTTP (no SDK dep), specific missing-key error |
 | `deep_scan.py` | active | Opt-in deep scan — high-risk file selection, prompt-injection-safe prompt, `--confirm` required. NOT yet verified against a live API call (OI-020) |
 | `verify_deep_scan.py` | active | Live-verification script for deep_scan.py's 2 unverified acceptance criteria (OI-020) — run once `ANTHROPIC_API_KEY` is available |
-| `skills/repocheck/SKILL.md` | active | RepoCheck's own Claude Code skill wrapper — scans clean under its own instruction-scan (dogfooding found and fixed a real false positive) |
+| `skills/repocheck/SKILL.md` | active | RepoCheck's own Claude Code skill wrapper — scans clean under its own instruction-scan (dogfooding found and fixed a real false positive); now also instructs leading with the about-summary and never auto-installing after the report (DECISIONS.md #025). Mirrored at `~/.claude/skills/repocheck/SKILL.md` (user-wide install, session 3) — keep both in sync |
 
 **ALL 12 MILESTONES COMPLETE.** Repo is public at
 github.com/14leux/repocheck, default branch `main`. Only tracked open

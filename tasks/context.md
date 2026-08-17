@@ -2,6 +2,75 @@
 
 **Status:** CLOSED
 
+## Session 4 — About-summary in report output; never-auto-install skill guardrail
+
+**Goal:** Two changes Mailu raised from real usage: (1) the report
+should tell the user what the scanned repo/skill is actually for, not
+just the security verdict; (2) a prior live session installed a scanned
+skill immediately after reporting its verdict without asking — fix the
+skill instructions so that never happens again.
+
+**What was done:** Added a mechanical (no LLM call, keeps the static
+scan free per DECISIONS.md #008/#009) "About this repo"/"About this
+skill" summary to `verdict.py`'s repo- and skill-mode output, in both
+text and `--json`. Repo mode: GitHub's own `description` field via a new
+`fetch_repo_description()` on `FileAccessProvider`/`GitHubFileAccessProvider`
+(default `None`, so `test_provider_swap.py` still passes untouched),
+falling back to the README's first real paragraph. Skill mode: the
+SKILL.md frontmatter's own `description:` field, falling back to the
+body's first paragraph. Verified against real repos
+(`pallets/itsdangerous`, the project's own `14leux/repocheck` SKILL.md)
+and unit-tested the extraction helpers directly.
+
+Fixed the auto-install gap in both `skills/repocheck/SKILL.md`
+(project-local) and the user-wide install at
+`~/.claude/skills/repocheck/SKILL.md` (outside this repo, not tracked
+by git here, but the actual copy that ran the session where the bug
+happened): report now explicitly ends at the verdict, with
+install/copy/add-dependency called out as a separate step gated on the
+user's explicit yes, added to both the workflow section and the
+Non-negotiables list. Also confirmed (DECISIONS.md #017, pre-existing)
+that the standalone CLI itself is already usable from Codex or any
+other shell-capable agent with no changes needed — `SKILL.md` is a
+Claude-Code-specific format Codex has no loader for, but
+`repocheck.py` has zero Claude Code dependency.
+
+**Next session starts with:** no milestones remain — all 12 are DONE.
+Same two open items as before, neither touched this session: OI-020
+(live deep-scan verification, needs a real ANTHROPIC_API_KEY) and OI-021
+(proximity-based obfuscation matching, AST-level, deferred).
+
+**Blockers:** none.
+
+**Milestone status:** unchanged from session 3 close — M1–M8, M10, M11,
+M12 DONE; M9 IN PROGRESS pending OI-020.
+
+```
+Close Verification:
+- KNOWLEDGE.md updated: no -- nothing new this session (the design
+  decisions made are architectural, captured in DECISIONS.md #025
+  instead; no bugs or quirks discovered)
+- DECISIONS.md updated: yes -- DECISION 025 (about-summary is
+  mechanical/no-LLM; skill wrapper must never auto-install after
+  reporting)
+- tasks/todo.md updated: yes -- Session 4 section added, all items [x]
+- Open Items table updated: no -- none touched this session (OI-020,
+  OI-021 unchanged, still OPEN)
+- tasks/codebase_map.md updated: yes -- verdict.py/interfaces.py/
+  github_provider.py descriptions updated for the new
+  fetch_repo_description/about-summary code; SKILL.md entry updated to
+  note the never-auto-install instruction and the user-wide mirror.
+  Full reconcile also run: `git ls-files` (30 files) diffed against the
+  map, zero discrepancies (no tracked-but-unmapped, no
+  mapped-but-deleted)
+- tasks/wip.md reset to empty template: yes
+- git commit created: yes -- see below
+- git push completed: yes -- see below, git log @{u}..HEAD checked empty
+- git worktree audit: see below
+```
+
+---
+
 ## Session 3 — Rebrand and humanized public-facing docs
 
 **Goal:** Rename the tool's display name to "Dr. RepoCheck," rewrite the

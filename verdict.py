@@ -39,6 +39,7 @@ from skeleton import (
     InvalidRepoArgError,
     fetch_all_files,
     fetch_file,
+    fetch_repo_description,
     find_manifests,
     list_tree,
     osv_batch_query,
@@ -145,6 +146,71 @@ EXPLANATIONS = {
 }
 
 
+# --- "about this repo/skill" summary -- purely mechanical (no LLM call,
+# consistent with the static scan's "free, no LLM calls" guarantee):
+# GitHub's own one-line repo description, or failing that, the first
+# real paragraph of the README / skill frontmatter. Best-effort, not a
+# substitute for actually reading the thing -- a repo with no
+# description and no README legitimately has nothing to summarize.
+
+README_CANDIDATES = ["README.md", "README.rst", "README.txt", "README"]
+
+
+def find_readme_path(tree):
+    paths = {entry["path"] for entry in tree if entry.get("type") == "blob"}
+    for candidate in README_CANDIDATES:
+        if candidate in paths:
+            return candidate
+    for p in paths:
+        if "/" not in p and p.lower().startswith("readme"):
+            return p
+    return None
+
+
+def extract_readme_summary(content, max_chars=400):
+    """First substantive paragraph: skips headers and badge/link-only
+    lines, strips markdown link/emphasis syntax, truncates with '...'."""
+    paragraph = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if paragraph:
+                break
+            continue
+        if stripped.startswith("#"):
+            continue
+        if re.fullmatch(r"(\[!\[.*?\]\(.*?\)\]\(.*?\)\s*)+", stripped):
+            continue  # badge row
+        if re.fullmatch(r"(!\[.*?\]\(.*?\)\s*)+", stripped):
+            continue  # bare image row
+        paragraph.append(stripped)
+    if not paragraph:
+        return None
+    text = " ".join(paragraph)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # [text](url) -> text
+    text = re.sub(r"[*_`]", "", text)
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "..."
+    return text
+
+
+def extract_skill_description(content):
+    """Prefers SKILL.md's own frontmatter `description:` field (already
+    the author's stated summary) over a guessed README-style paragraph."""
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
+    if m:
+        dm = re.search(r'^description:\s*(.+)$', m.group(1), re.MULTILINE)
+        if dm:
+            desc = dm.group(1).strip()
+            if len(desc) >= 2 and desc[0] == desc[-1] and desc[0] in ("'", '"'):
+                desc = desc[1:-1]
+            return desc or None
+        body = content[m.end():]
+    else:
+        body = content
+    return extract_readme_summary(body)
+
+
 def osv_vuln_severity(vuln_id):
     url = f"https://api.osv.dev/v1/vulns/{vuln_id}"
     req = urllib.request.Request(url, headers={"User-Agent": "repocheck-skeleton"})
@@ -239,6 +305,19 @@ def repo_verdict(owner, repo, as_json):
             print("This is not a clean result. Check the repo name and try again.")
         return False  # found by independent QA: this previously exited 0,
         # indistinguishable from success to any script/CI checking exit code
+
+    # "about this repo" -- GitHub's own description field first (already
+    # author-written, zero extra cost), README paragraph as fallback.
+    # Best-effort: a fetch failure here degrades to None, never the scan.
+    about = None
+    try:
+        about = fetch_repo_description(owner, repo)
+        if not about:
+            readme_path = find_readme_path(tree)
+            if readme_path:
+                about = extract_readme_summary(fetch_file(owner, repo, readme_path))
+    except Exception:
+        about = None
 
     manifests = find_manifests(tree)
     candidate_files = list(iter_scan_targets(tree))
@@ -430,7 +509,7 @@ def repo_verdict(owner, repo, as_json):
 
     if as_json:
         print(json.dumps({
-            "repo": f"{owner}/{repo}", "mode": "repo", "verdict": color,
+            "repo": f"{owner}/{repo}", "mode": "repo", "verdict": color, "about": about,
             "findings": findings, "suppressed": suppressed, **meta,
         }, indent=2))
         return not degraded
@@ -442,6 +521,7 @@ def repo_verdict(owner, repo, as_json):
             print(f"  [{d['pillar']}] {d['reason']}")
         print()
 
+    print(f"About this repo: {about if about else '(no description found -- empty GitHub description and no README)'}\n")
     print(f"VERDICT: {color}{'  (DEGRADED)' if degraded else ''}\n")
     print(f"Scanned: {meta['scan_timestamp']} | ruleset: code_scan={CODE_SCAN_VERSION}, "
           f"skill_scan={SKILL_SCAN_VERSION}, freshness_scan={FRESHNESS_SCAN_VERSION}\n")
@@ -465,8 +545,10 @@ def skill_verdict(owner, repo, path, as_json):
     degraded = []
     findings = []
     caveats = []
+    about = None
     try:
         content = fetch_file(owner, repo, path)
+        about = extract_skill_description(content)
         raw_findings, caveats = scan_skill_content(content)
         for category, detail in raw_findings:
             sev = {
@@ -491,7 +573,7 @@ def skill_verdict(owner, repo, path, as_json):
     if as_json:
         print(json.dumps({
             "repo": f"{owner}/{repo}", "path": path, "mode": "skill",
-            "verdict": color, "findings": findings, "suppressed": suppressed,
+            "verdict": color, "about": about, "findings": findings, "suppressed": suppressed,
             "caveats": [{"category": c, "detail": d} for c, d in caveats],
             **meta,
         }, indent=2))
@@ -503,6 +585,7 @@ def skill_verdict(owner, repo, path, as_json):
             print(f"  [{d['pillar']}] {d['reason']}")
         print()
 
+    print(f"About this skill: {about if about else '(no description found in frontmatter or body)'}\n")
     print(f"VERDICT: {color}{'  (DEGRADED)' if degraded else ''}\n")
     print(f"Scanned: {meta['scan_timestamp']} | ruleset: skill_scan={SKILL_SCAN_VERSION}\n")
     print("Findings:")

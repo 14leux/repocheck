@@ -218,7 +218,29 @@
 - [x] Documented both paths ("Calling it from other projects") in
       README.md's Install section
 
-## Next up (Session 4+) -- tracked technical debt, no milestones left
+## Session 4 -- about-summary + never-auto-install guardrail (done this session)
+
+- [x] `verdict.py`: "About this repo"/"About this skill" summary, mechanical
+      (no LLM call) -- GitHub repo `description` field first, README/skill-
+      frontmatter first-paragraph fallback. Surfaced in both text and
+      `--json` output for repo and skill mode. See DECISIONS.md #025
+- [x] `interfaces.py`/`github_provider.py`/`skeleton.py`: added
+      `fetch_repo_description` (default None, GitHub implementation reads
+      the repo's own `description` field) -- verified `test_provider_swap.py`
+      still passes unmodified
+- [x] Fixed a real gap Mailu hit personally: a prior session installed a
+      scanned skill immediately after reporting its verdict, without
+      asking. `skills/repocheck/SKILL.md` (project-local AND the
+      user-wide install at `~/.claude/skills/repocheck/SKILL.md`) now
+      explicitly instructs: report ends at the verdict, install/copy/
+      add-dependency is always a separate step gated on the user's
+      explicit yes, regardless of verdict color
+- [x] Verified against real repos: `pallets/itsdangerous` (GitHub
+      description picked up), `14leux/repocheck`'s own SKILL.md (skill
+      frontmatter description picked up), unit-tested the README-
+      fallback and badge-stripping logic directly
+
+## Next up (Session 5+) -- tracked technical debt, no milestones left
 
 All 12 milestones are DONE. Remaining work is tracked open items, not
 blocking anything:

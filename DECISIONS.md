@@ -923,3 +923,54 @@ output format) needs a corresponding check that the skill's
 instructions still match. Confirmed clean under RepoCheck's own
 instruction-scan (dogfooding, M10) — see KNOWLEDGE.md for a real false
 positive this surfaced and fixed in `skill_scan.py` itself.
+
+## DECISION 025 — "About this repo/skill" summary is mechanical, not an LLM call; skill wrapper must never auto-install after reporting
+
+**Date:** 2026-08-18
+
+**Context:** Mailu asked for two things after using the tool himself:
+(1) the report should include a brief description of what the scanned
+repo/skill is actually for, since a verdict alone doesn't tell the user
+what they're looking at; (2) after a skill-mode scan, a live session had
+gone ahead and installed the scanned skill immediately after reporting
+the verdict, without asking — the report is supposed to inform a
+decision, not make one on the user's behalf.
+
+**Decision (1 — about-summary):** Added `fetch_repo_description()` to
+`FileAccessProvider` (default `None`, GitHub implementation calls the
+repo's own `description` field via `/repos/{owner}/{repo}` — metadata
+GitHub already returns for free) plus a README-first-paragraph fallback
+(`extract_readme_summary()`) when GitHub has no description set. Skill
+mode instead reads the SKILL.md frontmatter's own `description:` field
+(`extract_skill_description()`), falling back to a README-style first
+paragraph of the body. Both surfaced as an `"about"` field in `--json`
+and an "About this repo"/"About this skill" line in text output, in
+`verdict.py`. Deliberately mechanical (regex/metadata, zero LLM calls)
+to stay consistent with the static scan's "free, no LLM calls"
+guarantee (DECISIONS.md #008/#009) — this is a summary of what the
+author already said the thing does, not RepoCheck's own interpretation
+of the code.
+
+**Decision (2 — no auto-install):** `skills/repocheck/SKILL.md` (both
+the project-local copy and the user-wide install at
+`~/.claude/skills/repocheck/SKILL.md`) now explicitly instructs: report
+ends at the verdict; installing, copying, or otherwise acting on the
+scanned repo/skill is always a separate step gated on the user's
+explicit yes, regardless of verdict color including CLEAR. Added to
+both the workflow section and the Non-negotiables list, so it isn't
+just one paragraph an agent could plausibly skim past.
+
+**Rejected alternative (about-summary):** Using the deep-scan
+`ModelProvider` (an LLM call) to generate the summary. Rejected — would
+make a normally-free static scan silently cost tokens/API usage for
+every single run, contradicting DECISION 008's free-by-default model,
+for a summary the repo/skill author has usually already written anyway.
+
+**Implications:** A repo with no GitHub description and no README (or
+a skill with no frontmatter description and no body text) legitimately
+gets "no description found" rather than a fabricated one — matches this
+project's general stance of an honest gap over an invented answer. The
+never-auto-install rule is instruction-only (prose in SKILL.md, not
+enforced in code) since RepoCheck's own code never performs
+installation in the first place — this closes a gap in *agent
+behavior* around the tool, not in the tool itself.

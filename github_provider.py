@@ -102,3 +102,8 @@ class GitHubFileAccessProvider(FileAccessProvider):
         for path in wanted - found:
             result[path] = FileNotFoundError(f"{path} not found in tarball")
         return result
+
+    def fetch_repo_description(self, owner, repo):
+        info = self._get(f"/repos/{owner}/{repo}")
+        description = info.get("description")
+        return description.strip() if description else None
