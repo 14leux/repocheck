@@ -64,9 +64,12 @@ Close Verification:
   map, zero discrepancies (no tracked-but-unmapped, no
   mapped-but-deleted)
 - tasks/wip.md reset to empty template: yes
-- git commit created: yes -- see below
-- git push completed: yes -- see below, git log @{u}..HEAD checked empty
-- git worktree audit: see below
+- git commit created: yes -- commit 4fbfeb0, "Session 4 close:
+  about-summary in report output, never-auto-install skill guardrail"
+  (9 files changed, 274 insertions, 11 deletions)
+- git push completed: yes -- 4fbfeb0 pushed to origin/main
+  (b17a1d8..4fbfeb0); `git log @{u}..HEAD` returned empty output
+- git worktree audit: clean -- single entry, D:/Projects/repocheck [main]
 ```
 
 ---
