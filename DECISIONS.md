@@ -974,3 +974,92 @@ never-auto-install rule is instruction-only (prose in SKILL.md, not
 enforced in code) since RepoCheck's own code never performs
 installation in the first place — this closes a gap in *agent
 behavior* around the tool, not in the tool itself.
+
+---
+
+## DECISION 026 — Fifth pillar: README link-integrity scan, plus a
+downloadable-binary caveat with explicit next-step guidance
+
+**Date:** 2026-08-22
+
+**Context:** A live scan of
+`unburdened-jackinthebox365/qwen38-uncensored` (an "uncensored Qwen"
+Ollama pack, reported gaining traction on social media) came back
+CLEAR under the existing four pillars — there was no code to flag, only
+one small manifest, no CVEs. But the repo's README is a bait-and-switch:
+every download link, including ones whose *visible text* names
+`ollama.com` and `lmstudio.ai`, actually points at a single
+`.zip` self-hosted in the repo's own `assets/` folder. None of the
+four existing pillars (CVE, code red-flags, freshness, skill-instruction
+scan) reads README link structure at all — a CLEAR verdict was actively
+misleading here, the same failure class DECISION 015 already named for
+skill-mode instruction prose, now found in repo-mode README markup.
+Mailu also asked, correctly, whether an antivirus check (VirusTotal) of
+the linked zip would fully resolve the risk — it would not: a
+multi-engine scan checks file bytes against known malware signatures,
+it says nothing about whether the page's links lied about where they
+go, and a novel/custom payload can score clean everywhere on day one.
+
+**Decision:**
+1. New pillar, `link_scan.py` — regex pass over parsed README markdown
+   links. Flags **link-text-domain-mismatch** (critical severity, alone
+   sufficient to force DANGER) when a link's visible text names a
+   well-known trusted domain (ollama.com, lmstudio.ai, huggingface.co,
+   pypi.org, npmjs.com, github.com, python.org, nodejs.org) but the
+   href resolves elsewhere. Runs on every repo-mode scan (free, no LLM
+   call), reusing the README fetch `verdict.py` already does for the
+   "about this repo" summary rather than a second API call.
+2. Separately, **not** a finding but a **caveat** —
+   `downloadable-binary-asset`: any README link to an archive/executable
+   (`.zip .exe .dmg .msi .pkg .appimage .deb .rpm`) hosted directly in
+   the repo. Hosting your own binary isn't inherently malicious (plenty
+   of legitimate repos do), so it doesn't move the verdict color — but
+   its contents are opaque to a text/code scanner, so the caveat's
+   explanation (`EXPLANATIONS["downloadable-binary-asset"]`, verdict.py)
+   spells out the actual next step: upload to a multi-engine scanner
+   (e.g. VirusTotal) before running, and explicitly that a clean result
+   is partial cover, not clearance — it doesn't verify README claims,
+   doesn't audit the page's own links/redirects (that's what the
+   link-integrity pillar is *for*), and a custom payload can pass every
+   engine on day one. Repo-mode output gained a "Caveats" section
+   (mirroring what skill mode already had for DECISION 020) to carry
+   this and any future non-finding caveats.
+3. Badge markup (`[![alt](https://img.shields.io/...)](https://real
+   target)`) is collapsed to its alt text before link parsing — found as
+   a live false positive during validation: `anthropic-sdk-python`'s
+   PyPI badge was initially misread as a link whose text says "PyPI"
+   but whose href is `img.shields.io`, when the actual (outer) link
+   correctly points to pypi.org. Badges are near-universal in READMEs;
+   this is a correctness fix on the parser, not a suppression.
+
+**Rejected alternatives:**
+- **Treat any repo-hosted binary as a finding, not just a caveat** —
+  rejected; would false-positive on every legitimate repo that ships
+  its own release artifact directly (common for small tools without a
+  separate release pipeline), diluting the signal same as DECISION 020
+  rejected flagging all dynamic-fetch skill instructions outright.
+- **Skip the domain-mention list, just flag any link where text
+  contains a URL-shaped substring that doesn't match the href** — more
+  general, rejected as both harder to keep low-noise (most link text
+  isn't URL-shaped at all, e.g. "click here") and less explainable to a
+  non-expert reader than "this text says X.com but doesn't go there."
+- **Rely on VirusTotal guidance alone (conversational, not coded)** —
+  rejected; Mailu specifically asked for this to be a tool-level
+  behavior change, not something only said in chat, so a future session
+  (or another user of the shared skill) gets it automatically.
+
+**Tradeoffs:** The trusted-domain list is a finite, hand-maintained set
+(same shape as DECISION 006 accepted for the code red-flag ruleset) —
+a domain not on the list won't trigger the check even if spoofed the
+same way. Extending it later is a normal versioned-ruleset change, same
+process as DECISION 006 already established. One extra file fetch per
+repo scan (README content, previously only fetched conditionally) —
+negligible against the existing per-dependency lookup cost.
+
+**Implications:** `EXPLANATIONS` in verdict.py now needs an entry for
+every caveat category, not only every finding category, since the
+caveats section reuses `EXPLANATIONS[category]['what']`/`['attack']`
+for its "what this is / what to do" lines. Any future caveat category
+must follow the same convention. `link_scan.RULESET_VERSION` follows
+DECISION 012's versioned-ruleset pattern and is now reported alongside
+the other three ruleset versions in both text and `--json` output.

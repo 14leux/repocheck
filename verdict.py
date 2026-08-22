@@ -35,6 +35,8 @@ from code_scan import RULESET_VERSION as CODE_SCAN_VERSION
 from code_scan import iter_scan_targets, scan_file_content
 from freshness_scan import RULESET_VERSION as FRESHNESS_SCAN_VERSION
 from freshness_scan import FRESHNESS_LOOKUPS, classify
+from link_scan import RULESET_VERSION as LINK_SCAN_VERSION
+from link_scan import scan_readme_links
 from skeleton import (
     InvalidRepoArgError,
     fetch_all_files,
@@ -142,6 +144,36 @@ EXPLANATIONS = {
                "found in it later",
         "attack": "not an active attack on its own -- a risk-exposure signal, not "
                    "evidence of compromise",
+    },
+    "link-text-domain-mismatch": {
+        "what": "a link whose visible text names a trusted, well-known site (e.g. "
+                "ollama.com, lmstudio.ai, github.com) but whose actual destination "
+                "is somewhere else entirely -- often the repo's own hosted file",
+        "why": "a reader skimming the link text assumes they're headed to the "
+               "trusted domain and lowers their guard; the real destination can be "
+               "anything, including a self-hosted archive the repo controls "
+               "directly",
+        "attack": "malware distribution pages routinely disguise a download link as "
+                   "pointing to a well-known installer site (e.g. \"go to "
+                   "ollama.com\") while the link actually serves a payload from "
+                   "repo-hosted or throwaway infrastructure -- do not download or "
+                   "run anything reached through a link that did this",
+    },
+    "downloadable-binary-asset": {
+        "what": "a README link to an archive or executable hosted directly in the "
+                "repo, rather than a link to an official upstream release/model page",
+        "why": "RepoCheck's static scan reads source and text -- it cannot see "
+               "inside a .zip/.exe/.dmg -- so a CLEAR verdict on the repo's visible "
+               "code says nothing about what that file actually contains",
+        "attack": "not evidence of malware by itself. Before running it: upload it "
+                   "to a multi-engine scanner (e.g. VirusTotal) rather than running "
+                   "it directly. But treat a clean result as partial cover, not a "
+                   "clearance -- VirusTotal checks the file's bytes against known "
+                   "malware signatures; it does NOT verify the repo's README "
+                   "claims, does not audit any links/redirects the download page "
+                   "itself used to get you here (see link-text-domain-mismatch "
+                   "above, which VirusTotal has no way to check), and a novel or "
+                   "custom payload can score clean against every engine on day one",
     },
 }
 
@@ -309,15 +341,20 @@ def repo_verdict(owner, repo, as_json):
     # "about this repo" -- GitHub's own description field first (already
     # author-written, zero extra cost), README paragraph as fallback.
     # Best-effort: a fetch failure here degrades to None, never the scan.
+    # README content is kept (not just the summary) so the link-integrity
+    # pillar below can reuse the same fetch instead of a second API call.
     about = None
+    readme_path = None
+    readme_content = None
     try:
         about = fetch_repo_description(owner, repo)
-        if not about:
-            readme_path = find_readme_path(tree)
-            if readme_path:
-                about = extract_readme_summary(fetch_file(owner, repo, readme_path))
+        readme_path = find_readme_path(tree)
+        if readme_path:
+            readme_content = fetch_file(owner, repo, readme_path)
+            if not about:
+                about = extract_readme_summary(readme_content)
     except Exception:
-        about = None
+        pass
 
     manifests = find_manifests(tree)
     candidate_files = list(iter_scan_targets(tree))
@@ -348,6 +385,7 @@ def repo_verdict(owner, repo, as_json):
     )
 
     findings = []
+    caveats = []
     # DECISIONS.md-adjacent OI-011: a pillar that fails must say so in
     # the verdict, never silently look like "no findings" -- that's
     # indistinguishable from "verified clean" to a reader, which is a
@@ -492,6 +530,19 @@ def repo_verdict(owner, repo, as_json):
     except Exception as e:
         degraded.append({"pillar": "freshness", "reason": str(e)})
 
+    # --- link-integrity pillar (README bait-and-switch links) ---
+    # motivating case: a repo can be code-CLEAR while its README's link
+    # text lies about where a download actually goes -- no other pillar
+    # reads README link structure at all. See link_scan.py docstring.
+    try:
+        if readme_content:
+            link_findings, link_caveats = scan_readme_links(readme_content)
+            for category, detail in link_findings:
+                findings.append(make_finding(category, "critical", detail, readme_path))
+            caveats.extend(link_caveats)
+    except Exception as e:
+        degraded.append({"pillar": "link-integrity", "reason": str(e)})
+
     # --- suppression (OI-013) ---
     suppressions = load_suppressions(owner, repo)
     findings, suppressed = apply_suppressions(findings, suppressions)
@@ -503,6 +554,7 @@ def repo_verdict(owner, repo, as_json):
             "code_scan": CODE_SCAN_VERSION,
             "skill_scan": SKILL_SCAN_VERSION,
             "freshness_scan": FRESHNESS_SCAN_VERSION,
+            "link_scan": LINK_SCAN_VERSION,
         },
         "degraded": degraded,
     }
@@ -510,7 +562,9 @@ def repo_verdict(owner, repo, as_json):
     if as_json:
         print(json.dumps({
             "repo": f"{owner}/{repo}", "mode": "repo", "verdict": color, "about": about,
-            "findings": findings, "suppressed": suppressed, **meta,
+            "findings": findings, "suppressed": suppressed,
+            "caveats": [{"category": c, "detail": d} for c, d in caveats],
+            **meta,
         }, indent=2))
         return not degraded
 
@@ -524,7 +578,8 @@ def repo_verdict(owner, repo, as_json):
     print(f"About this repo: {about if about else '(no description found -- empty GitHub description and no README)'}\n")
     print(f"VERDICT: {color}{'  (DEGRADED)' if degraded else ''}\n")
     print(f"Scanned: {meta['scan_timestamp']} | ruleset: code_scan={CODE_SCAN_VERSION}, "
-          f"skill_scan={SKILL_SCAN_VERSION}, freshness_scan={FRESHNESS_SCAN_VERSION}\n")
+          f"skill_scan={SKILL_SCAN_VERSION}, freshness_scan={FRESHNESS_SCAN_VERSION}, "
+          f"link_scan={LINK_SCAN_VERSION}\n")
     print("Findings:")
     render_findings(findings)
     if suppressed:
@@ -534,6 +589,16 @@ def repo_verdict(owner, repo, as_json):
     if abandoned_count:
         print(f"\n({abandoned_count} dependencies are pinned to a version their "
               f"maintainer hasn't updated in years -- see 'pinned and abandoned' above.)")
+    print()
+    if caveats:
+        print("Caveats (not findings -- things RepoCheck cannot fully verify by scanning):")
+        for category, detail in caveats:
+            print(f"  [{category}] {detail}")
+            if category in EXPLANATIONS:
+                print(f"      What this is: {EXPLANATIONS[category]['what']}")
+                print(f"      What to do: {EXPLANATIONS[category]['attack']}")
+    else:
+        print("Caveats: none")
     return not degraded
 
 

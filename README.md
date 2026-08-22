@@ -106,7 +106,7 @@ the verdict field/color for the actual security result.
 
 ### What gets checked
 
-**Repo mode** — four pillars, combined into one verdict:
+**Repo mode** — five pillars, combined into one verdict:
 1. **Known CVEs** in declared dependencies, looked up live against
    [OSV.dev](https://osv.dev) at scan time (never a local, self-updating
    database — see `DECISIONS.md` #001 for why).
@@ -115,7 +115,17 @@ the verdict field/color for the actual security result.
 3. **Dependency freshness** — how far behind (or genuinely abandoned)
    each dependency is, distinguishing pinning *style* from real
    staleness.
-4. A **plain-language verdict** combining all three, with the most
+4. **README link integrity** — flags a link whose visible text names a
+   trusted domain (ollama.com, lmstudio.ai, pypi.org, npmjs.com,
+   github.com, ...) while the actual href goes somewhere else entirely,
+   the exact bait-and-switch pattern a code/dependency scan has no way
+   to see (see `DECISIONS.md` #026). Separately surfaces a caveat, not
+   a finding, when the README links to an archive/executable hosted
+   directly in the repo — its contents are opaque to a static scan, so
+   the caveat spells out the actual next step (a multi-engine scan
+   like VirusTotal before running it) and its limit (a clean AV result
+   doesn't verify the README's claims or its links).
+5. A **plain-language verdict** combining all four, with the most
    severe finding always driving the color (never averaged away).
 
 **Skill mode** — the differentiated case. The dominant real-world

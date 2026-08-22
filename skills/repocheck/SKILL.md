@@ -23,9 +23,10 @@ Run:
 python repocheck.py <owner/repo-or-github-url> [path/to/SKILL.md]
 ```
 This is pure local static analysis -- CVE lookup via OSV.dev, code and
-instruction red-flag pattern matching, dependency freshness. No cost,
-no API calls. Report to the user in plain language, don't just paste
-the raw output:
+instruction red-flag pattern matching, dependency freshness, and README
+link-integrity (does a link's visible text name a trusted domain it
+doesn't actually go to). No cost, no API calls. Report to the user in
+plain language, don't just paste the raw output:
 1. **What this is** -- lead with the output's "About this repo"/"About
    this skill" line (what RepoCheck understood the thing to actually
    do), so the user knows what they're even looking at before the
@@ -33,6 +34,22 @@ the raw output:
 2. **The verdict** (CLEAR / CAUTION / DANGER) and findings, using the
    "What this is / Why it matters / Real-world pattern" explanations
    already in the output, summarized for their situation.
+3. **Caveats, not just findings.** Repo mode (and skill mode) can
+   report a "Caveats" section separate from findings -- things flagged
+   but not resolvable by static scanning, most notably
+   `downloadable-binary-asset` when the README links to an archive or
+   executable hosted in the repo. Always surface these: state plainly
+   that the file's contents are unverified by this scan, that the
+   real next step is a multi-engine scan (e.g. VirusTotal) *before*
+   running it -- never do this scan or download yourself, direct the
+   user to it -- and the actual limit of that check: a clean AV result
+   only means no engine recognized it as malware yet, it does not
+   verify the repo's README claims or audit whether the page's own
+   links/redirects lied about their destination (that's what the
+   `link-text-domain-mismatch` finding above already covers, and
+   VirusTotal has no way to check it). Don't let a CLEAR verdict on
+   the surrounding code imply the linked binary was vetted too --
+   these are separate questions.
 
 ## After reporting: installing/using it is a separate, explicit step
 
