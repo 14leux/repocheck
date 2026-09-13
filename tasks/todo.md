@@ -247,3 +247,75 @@ blocking anything:
 
 - [ ] OI-020: run `verify_deep_scan.py` once ANTHROPIC_API_KEY is available, flip M9 fully DONE
 - [ ] OI-021: proximity-based obfuscation co-occurrence (needs AST analysis)
+
+## HANDOFF_PLAN_2026-09.md -- discipline + quality debt (recorded, NOT executed)
+
+Recorded from `D:\Projects\HANDOFF_PLAN_2026-09.md` §3 (repocheck row)
+and §4.9 during a 2026-09-13 audit session. That session did NOT
+implement any of these -- it only confirmed the plan's claims against
+the real repo state and wrote this list so the next session executes
+from here instead of re-deriving it. Per the plan's own rules (§0.1),
+do these in a dedicated repocheck session after `/session-start`, one
+task at a time, committing after each ID.
+
+Audit finding: D-RC-1 is only PARTIAL, not started fresh -- see below.
+
+### Discipline (§3, "lightweight" tier)
+
+- [ ] **D-RC-1 (PARTIAL)** -- Add `## Session start` and `## Session
+      close` sections *inside* `.agent/instructions.md` itself, combining
+      is allowed for lightweight projects, covering PROJECT_DISCIPLINE.md
+      §4.1 (repo establishment), operator states (ACTIVE/YIELDED/UNKNOWN),
+      §10.4 (close steps) and the §10.5 verification block. **Gap found in
+      audit:** the current `.agent/instructions.md` only has a "Boot
+      sequence" / "Close sequence" that POINTS AT the external master file
+      (`D:\Projects\PROJECT_DISCIPLINE.md`) -- it does not contain those
+      sections' content inline, so the file is not self-contained as
+      D-RC-1 requires (a session can't boot correctly from this file alone
+      if the master file is unavailable/stale/moved).
+- [ ] **D-RC-2** -- Rewrite `tasks/wip.md` to the canonical PROJECT_DISCIPLINE.md
+      §3.3 template with `- ` bullet-prefixed fields including
+      `Operator state: ACTIVE|YIELDED|UNKNOWN` (current file is a 5-line
+      stub: Current step / Next concrete step / Done so far / Tried and
+      failed -- none of the canonical fields, no operator-state field).
+- [ ] **D-RC-3** -- Add a Tier-0 index table at the top of both
+      `KNOWLEDGE.md` and `DECISIONS.md` (no deletion of existing content --
+      this is a 31-file project, archiving is not warranted, just an index
+      for fast lookup).
+- [ ] **D-RC-4** -- Install the shared discipline checker as a 3-line
+      wrapper (`tools/check-discipline.ps1` calling
+      `D:/Projects/tools/check-discipline.ps1 -Root .`, per Phase G-4);
+      reference it from the close sequence.
+
+### Quality (§4.9)
+
+- [ ] **Q-RC-1** -- Add `ruff.toml`, `pyrightconfig.json`, pre-commit
+      config (from `D:/Projects/templates/`); CI workflow from
+      `ci-python.yml` running the existing test suite. Evidence required:
+      a green CI run URL.
+- [ ] **Q-RC-2** -- Hypothesis property tests on `verdict.py`: any findings
+      list yields a verdict in the allowed set; finding order never
+      changes the verdict.
+- [ ] **Q-RC-3** -- `weekly-deep.yml` (semgrep, long Hypothesis profile,
+      dependency audits) + `dependabot.yml` for this repo's ecosystem(s).
+
+### Cross-project (§5)
+
+- [ ] **S-1** -- `gitleaks git --log-opts="--all"` over full history, first
+      session touching this project under the plan. Any hit stops the
+      session and gets reported, not fixed silently.
+- [ ] **S-2** -- Note on applicability: §8's execution-order table (row 13)
+      lists this project's session as `D-RC-*, Q-RC-*, S-1` -- S-2 is NOT
+      listed separately for repocheck there, and its dependabot content is
+      already covered under Q-RC-3 above. §5 describes S-2 as a
+      cross-project task "in each project's session" generically. Net: no
+      separate S-2 action beyond what Q-RC-3 already covers -- flagged
+      here so the next session doesn't have to re-derive this reconciliation,
+      not asserting it's necessarily correct. Confirm with Mailu if unsure
+      before skipping it outright.
+
+Audit basis: D-RC-2 through D-RC-4 and Q-RC-1 through Q-RC-3 are all NOT
+DONE (verified 2026-09-13) -- no canonical wip.md fields, no Tier-0 index
+tables in KNOWLEDGE.md/DECISIONS.md, no checker wrapper, no
+ruff.toml/pyrightconfig/pre-commit, no CI workflows at all, no Hypothesis
+test on verdict.py, no weekly-deep/dependabot, no gitleaks scan ever run.
